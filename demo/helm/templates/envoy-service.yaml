@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.dh.svcNameEnvoy }}
+  labels:
+    {{- include "dhdemo.labels" . | nindent 4 }}
+  annotations:
+    cloud.google.com/app-protocols: '{"envoy-client":"HTTP2"}'
+    beta.cloud.google.com/backend-config: "{\"ports\" : { \"envoy-client\" : \"dh-backend-envoy\"}}"
+    cloud.google.com/neg: '{"ingress": true}'
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    -
+      name: envoy-client
+      port: 10000
+      targetPort: "10000"
+      protocol: TCP
+    -
+      name: envoy-admin
+      port: 9090
+      targetPort: "9090"
+      protocol: TCP
+
+  selector:
+    dh-purpose: worker

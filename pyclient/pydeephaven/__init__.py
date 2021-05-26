@@ -30,3 +30,4 @@ from .constants import SortDirection, MatchRule
 from .query import Query
 
 __version__ = "0.9.0"
+

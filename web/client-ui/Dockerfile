@@ -1,6 +1,7 @@
 FROM deephaven/node:local-build
 WORKDIR /usr/src/app
 
+FROM node as build
 ARG WEB_VERSION=0.11.2
 
 # Pull in the published code-studio package from npmjs and extract is
@@ -19,3 +20,4 @@ RUN set -eux; \
     mv package/build iframe/table; \
     rm -r package; \
     rm deephaven-embed-grid-${WEB_VERSION}.tgz;
+

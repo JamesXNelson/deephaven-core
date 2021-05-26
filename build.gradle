@@ -7,11 +7,180 @@ import org.gradle.internal.jvm.Jvm
 
 import java.util.concurrent.TimeUnit
 
-def isCi = System.getenv().getOrDefault("CI", "false") == "true"
-def gradleJvmVersion = Jvm.current().getJavaVersion()
-if (isCi) {
-    if (gradleJvmVersion != JavaVersion.VERSION_11) {
-        throw new IllegalStateException("JDK 11 is currently required for CI builds")
+allprojects {
+    repositories {
+        mavenCentral()
+        maven {
+            url 'https://jitpack.io'
+            content {
+                includeGroup 'com.github.rdblue'
+            }
+        }
+        maven {
+            url 'https://maven.twttr.com'
+            content {
+                includeGroup 'com.hadoop.gplcompression'
+            }
+        }
+        maven {
+            url 'https://packages.confluent.io/maven'
+            content {
+                includeGroup 'io.confluent'
+                includeGroup 'org.apache.kafka'
+            }
+        }
+    }
+}
+
+apply plugin: 'base'
+apply plugin: 'idea'
+
+idea {
+    project {
+        //if you want to set specific jdk and language level
+        jdkName = '1.8'
+        languageLevel = '1.8'
+
+        //you can configure the VCS used by the project
+        vcs = 'Git'
+
+    }
+    module {
+        downloadJavadoc = true
+        downloadSources = true
+        contentRoot = file("$rootDir")
+        excludeDirs = files(
+                'lib/thirdparty', 'lib/external', // jars we copy around
+                'py/venvs', 'py/installs',  // generated python installs / venvs
+                'web/.cache', // generated web files
+                'build',
+                'node_modules',
+                'packages'
+        ) as Set
+    }
+}
+
+project.version = '0.8.22'
+ext.versionSource = versionSource
+ext.globalVersion = "0.8.11"
+project.version = '0.8.11'
+
+// To set fishlibVersion, go to project-local gradle.properties file
+// (or, use the gradle.properties in $USER_HOME/.gradle for a global override)
+// If you have fishlib open in IDE, also set includeFish=true to get the
+// intellij projects wired up across repositories.
+
+Set<Project> modsAreBin = subprojects.findAll {it.name in ['bin', 'configs', 'test-configs']}
+Set<Project> modsRegular = subprojects - modsAreBin
+
+allprojects {
+
+    apply plugin: 'jacoco'
+    apply plugin: 'idea'
+    apply plugin: 'license'
+
+    jacoco {
+      toolVersion = "0.8.4"
+    }
+
+    license {
+        header rootProject.file('license-header')
+        include "**/*.java"
+        strictCheck true
+        useDefaultMappings true
+        ignoreFailures true
+    }
+
+    // we apply the classpaths build to share it across all modules.
+    // this is technically excessive, as non-java modules should not care...
+    apply from: "$rootDir/classpaths.gradle"
+    configurations.all({ c ->
+        // Make dynamic versions illegal.
+        c.dependencies.all({
+            Dependency dep ->
+                if (dep.version && dep.version.endsWith('+')) {
+                    throw new GradleException("Dynamic versions not allowed ($dep found in $path)")
+                }
+        })
+        c.resolutionStrategy {
+            // by default, we don't use any changing modules.
+            // however, if a developer is working on something where jars
+            // are published to a local filesystem (like mavenLocal()),
+            // they can use `api group: 'com.foo', name: 'blah', version: '1', changing: true`,
+            // and gradle will happily recheck the filesystem for changes.
+            cacheChangingModulesFor 0, 'seconds'
+        }
+        if (includeFish) {
+            c.resolutionStrategy.preferProjectModules()
+        }
+    })
+
+}
+
+allprojects*.tasks*.withType(JavaCompile)*.configureEach {
+    JavaCompile javac ->
+        javac.options.forkOptions.memoryMaximumSize = "2G"
+        javac.options.fork = true
+        javac.options.compilerArgs << '-parameters'
+}
+
+subprojects {
+    Project p ->
+    p.group = 'io.deephaven'
+    p.version = globalVersion
+    p.plugins.apply('io.deephaven.java-conventions')
+    def license = License.createFrom(p)
+    license.register()
+    p.ext.license = license
+}
+
+
+// setup standard sourceSets for non-bin modules
+configure modsRegular,
+{ Project p ->
+
+    p.tasks.jacocoTestReport {
+        reports {
+            xml.enabled true
+            csv.enabled true
+            html.enabled true
+//            html.destination "${buildDir}/jacocoHtml"
+        }
+    }
+
+    p.tasks.create 'sourceJar', Jar, {
+        Jar j ->
+            j.classifier = 'sources'
+            j.from Java.sourceSet(p).allJava
+    }
+
+    p.tasks.create 'javadocJar', Jar, {
+        Jar j ->
+            j.dependsOn p.tasks.javadoc
+            j.classifier = 'javadoc'
+            j.from p.tasks.withType(Javadoc)*.destinationDir
+    }
+
+    p.tasks.create('listCompileDeps').doLast {
+        println "$p.path compile dependencies:"
+        p.configurations.compile.each { File file -> println file.name }
+    }
+
+    p.artifacts {
+        archives p.tasks.sourceJar
+//        archives p.tasks.javadocJar
+    }
+
+    p.tasks.create 'testJar', Jar, {
+        Jar jar ->
+            jar.from Java.sourceSet(p, 'test').output
+            jar.classifier = 'test'
+    }
+
+    artifacts {
+        testOutput p.tasks.testJar
+        archives p.tasks.testJar
+>>>>>>> Nasty giant commit of all the dirty hacks done to get demo site up on heml/gke
     }
 } else {
     if (!gradleJvmVersion.isCompatibleWith(JavaVersion.VERSION_11)) {
@@ -63,7 +232,10 @@ tasks.register('prepareCompose') {
             project(':docker-server').tasks.findByName('buildDocker-server'),
             project(':docker-web').tasks.findByName('buildDocker'),
             project(':envoy').tasks.findByName('buildDocker'),
-            project(':grpc-proxy').tasks.findByName('buildDocker-grpc-proxy')
+            project(':demo-grpc-api').tasks.findByName('buildImage'),
+            project(':grpc-proxy').tasks.findByName('buildDocker-grpc-proxy'),
+            project(':demo-server').tasks.findByName('buildImage'),
+            project(':demo-web').tasks.findByName('buildImage')
 }
 
 tasks.register('smoke') {

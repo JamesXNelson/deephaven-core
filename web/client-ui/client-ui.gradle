@@ -13,6 +13,7 @@ def ui = Docker.registerDockerTask(project, 'ui') {
     parentContainers = [ Docker.registryTask(project, 'node') ]
     containerOutPath = '/usr/src/app/'
     imageName = 'deephaven/dhide:local-build'
+    buildArgs = [ 'WEB_VERSION' : project.property('webVersion') ]
     copyOut {
         into dhUi.get()
     }

@@ -1,3 +1,14 @@
+pluginManagement {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    plugins {
+        id "${quarkusPluginId}" version "${quarkusPluginVersion}"
+    }
+}
+
 plugins {
     id 'com.gradle.enterprise' version '3.5.2'
 }
@@ -20,7 +31,8 @@ String[] mods = [
         'python-engine-test',
         'server',
         'table-api',
-        'qst'
+        'qst',
+        'demo'
 ]
 
         // new web projects; these modules are intended to form a complete, modular web application,
@@ -291,6 +303,15 @@ file("${rootDir}/docker/registry").list().each { name ->
         project(":docker-${name}").projectDir = file("${rootDir}/docker/registry/${name}")
     }
 }
+
+include(':demo-web')
+project(':demo-web').projectDir = file('demo/web')
+
+include(':demo-certs')
+project(':demo-certs').projectDir = file('demo/certs')
+
+include(':demo-server')
+project(':demo-server').projectDir = file('demo/server')
 
 // Apply "vanity naming" (look for .gradle files matching ProjectName/ProjectName.gradle)
 File root = settings.rootDir

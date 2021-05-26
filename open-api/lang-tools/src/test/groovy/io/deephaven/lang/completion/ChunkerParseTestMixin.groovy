@@ -67,7 +67,6 @@ trait ChunkerParseTestMixin {
         return doCompletion(command, result.get(resultIndex))
     }
 
-
     @CompileDynamic
     void assertAllValid(ParsedDocument parsed, String src) {
         if (!src) {

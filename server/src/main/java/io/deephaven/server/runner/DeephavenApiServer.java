@@ -19,6 +19,8 @@ import io.deephaven.uri.resolver.UriResolversInstance;
 import io.deephaven.util.annotations.VisibleForTesting;
 import io.deephaven.util.process.ProcessEnvironment;
 import io.deephaven.util.process.ShutdownManager;
+import io.grpc.health.v1.HealthCheckResponse;
+import io.grpc.protobuf.services.HealthStatusManager;
 
 import javax.inject.Inject;
 import java.io.IOException;
