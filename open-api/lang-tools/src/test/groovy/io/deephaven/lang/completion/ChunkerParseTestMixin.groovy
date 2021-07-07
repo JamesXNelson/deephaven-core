@@ -8,7 +8,10 @@ import io.deephaven.lang.generated.Node
 import io.deephaven.lang.generated.Token
 import io.deephaven.lang.parse.CompletionParser
 import io.deephaven.lang.parse.ParsedDocument
+import io.deephaven.lang.parse.api.Languages
 import io.deephaven.proto.backplane.script.grpc.CompletionItem
+import io.deephaven.proto.backplane.script.grpc.CompletionItemOrBuilder
+import io.deephaven.proto.backplane.script.grpc.Position
 import io.deephaven.util.process.ProcessEnvironment
 import spock.lang.Specification
 
@@ -40,8 +43,13 @@ trait ChunkerParseTestMixin {
 
     ParsedDocument parse(String command) {
         CompletionParser p = new CompletionParser();
+        p.setLanguage(getLanguage());
         doc = p.parse(command)
         return doc
+    }
+
+    String getLanguage() {
+        return Languages.LANGUAGE_GROOVY
     }
 
     @CompileDynamic
@@ -56,9 +64,15 @@ trait ChunkerParseTestMixin {
             throw new IllegalArgumentException("Invalid result index " + resultIndex +"; only had " + results.size() + " results: " + results)
         }
         return doCompletion(command, result.get(resultIndex))
-
     }
 
+    String doCompletion(String command, CompletionItemOrBuilder fragment) {
+        Position.Builder pos = doc.findEditRange(fragment.textEdit.range)
+
+        return new StringBuilder(command)
+                .replace(pos.line, pos.character, fragment.textEdit.text)
+                .toString()
+    }
 
     @CompileDynamic
     void assertAllValid(ParsedDocument parsed, String src) {
