@@ -1,5 +1,6 @@
 package io.deephaven.ide.shared;
 
+import com.google.gwt.core.client.Duration;
 import elemental2.core.JsArray;
 import elemental2.core.JsSet;
 import elemental2.dom.CustomEventInit;
@@ -112,6 +113,7 @@ public class IdeSession extends HasEventHandling {
     }
 
     public CancellablePromise<JsCommandResult> runCode(String code) {
+        final double start = Duration.currentTimeMillis();
         LazyPromise<CommandResult> promise = new LazyPromise<>();
         ExecuteCommandRequest request = new ExecuteCommandRequest();
         request.setConsoleId(this.result);
@@ -128,6 +130,7 @@ public class IdeSession extends HasEventHandling {
             changes.removed = copyVariables(response.getRemovedList());
             commandResult.setChanges(changes);
             promise.succeed(commandResult);
+            JsLog.error("Done execute command; total latency: ", Duration.currentTimeMillis() - start, "ms");
             return null;
         }, err -> {
             promise.fail(err);
@@ -184,6 +187,7 @@ public class IdeSession extends HasEventHandling {
     }
 
     public void changeDocument(Object params) {
+        double startChange = Duration.currentTimeMillis();
         // translate arbitrary value from js to our "properly typed request object".
         final JsPropertyMap<Object> jsMap = (JsPropertyMap<Object>) params;
         final ChangeDocumentRequest request = new ChangeDocumentRequest();
@@ -212,7 +216,7 @@ public class IdeSession extends HasEventHandling {
 
         JsLog.debug("Sending content changes", request);
         connection.consoleServiceClient().changeDocument(request, connection.metadata(),
-                (p0, p1) -> JsLog.debug("Updated doc", p0, p1));
+                (p0, p1) -> JsLog.error("Updated doc ", p0, p1, " took ", Duration.currentTimeMillis() - startChange, "ms"));
     }
 
     private DocumentRange toRange(final Any range) {
@@ -243,8 +247,8 @@ public class IdeSession extends HasEventHandling {
 
         LazyPromise<JsArray<io.deephaven.web.shared.ide.lsp.CompletionItem>> promise = new LazyPromise<>();
         connection.consoleServiceClient().getCompletionItems(request, connection.metadata(), (p0, p1)->{
-            JsLog.debug("Got completions", p0, p1);
-            promise.succeed(cleanupItems(p1.getItemsList()));
+            JsLog.error("Got completions", p0.getCode(), " : " , p0, " : ", p1);
+                promise.succeed(cleanupItems(p1.getItemsList()));
         });
 
         return promise.asPromise(JsTable.MAX_BATCH_TIME)

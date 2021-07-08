@@ -147,15 +147,24 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
 
     @Override
     public void executeCommand(ExecuteCommandRequest request, StreamObserver<ExecuteCommandResponse> responseObserver) {
+        final long nanos = System.nanoTime();
+        log.warn().append("execute start").endl();
         GrpcUtil.rpcWrapper(log, responseObserver, () -> {
+            final long beforeSession = System.nanoTime();
+            log.warn().append("execute before get session: ").append(timeFmt(beforeSession - nanos)).endl();
             final SessionState session = sessionService.getCurrentSession();
-
+            final long afterSession = System.nanoTime();
+            log.warn().append("execute after get session: ").append(timeFmt(afterSession - beforeSession)).endl();
             SessionState.ExportObject<ScriptSession> exportedConsole = ticketRouter.resolve(session, request.getConsoleId());
+            final long afterTicket = System.nanoTime();
+            log.warn().append("execute after get ticket: ").append(timeFmt(afterTicket - afterSession)).endl();
             session.nonExport()
                     .requiresSerialQueue()
                     .require(exportedConsole)
                     .onError(responseObserver::onError)
                     .submit(() -> {
+                        final long inSubmit = System.nanoTime();
+                        log.warn().append("execute in submit: ").append(timeFmt(inSubmit - afterTicket)).endl();
                         ScriptSession scriptSession = exportedConsole.get();
 
                         //produce a diff
@@ -169,8 +178,38 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
 
                         responseObserver.onNext(diff.build());
                         responseObserver.onCompleted();
+                        log.warn().append("execute total latency: ").append(timeFmt(System.nanoTime() - nanos)).endl();
                     });
         });
+    }
+
+    private static String timeFmt(final long l) {
+        double t = l;
+        String s = Long.toString(l);
+        if (t > 1_000) {
+            if (t > 1_000_000) {
+                if (t > 1_000_000_000) {
+                    t = t / 1_000_000_000.0;
+                    s = Double.toString(t);
+                    return chop3(s) + "s";
+                }
+                t = t / 1_000_000.0;
+                s = Double.toString(t);
+                return chop3(s) + "ms";
+            }
+            t = t / 1_000.0;
+            s = Double.toString(t);
+            return chop3(s) + "us";
+        }
+        return l + "ns";
+    }
+
+    private static String chop3(final String s) {
+        int i = s.indexOf('.');
+        if (i == -1) {
+            return s;
+        }
+        return s.substring(0, Math.min(s.length(), i + 3));
     }
 
     private static VariableDefinition makeVariableDefinition(Map.Entry<String, ExportedObjectType> entry) {
@@ -262,38 +301,64 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
     }
     @Override
     public void changeDocument(ChangeDocumentRequest request, StreamObserver<ChangeDocumentResponse> responseObserver) {
+        final long start = System.nanoTime();
+        log.warn().append("change start: ").endl();
+
         GrpcUtil.rpcWrapper(log, responseObserver, () -> {
+            final long beforeSession = System.nanoTime();
+            log.warn().append("change beforeSession: ").append(timeFmt(beforeSession - start)).endl();
             final SessionState session = sessionService.getCurrentSession();
+            final long beforeConsole = System.nanoTime();
+            log.warn().append("change beforeGetConsole: ").append(timeFmt(beforeConsole - beforeSession)).endl();
             SessionState.ExportObject<ScriptSession> exportedConsole = session.getExport(request.getConsoleId());
+            final long afterConsole = System.nanoTime();
+            log.warn().append("change afterGetConsole: ").append(timeFmt(afterConsole - beforeConsole)).endl();
             session
                 .nonExport()
                 .require(exportedConsole)
                 .onError(responseObserver::onError)
                 .submit(()->{
+                    final long inSubmit = System.nanoTime();
+                    log.warn().append("change in submit: ").append(timeFmt(inSubmit - afterConsole)).endl();
                     final ScriptSession scriptSession = exportedConsole.get();
                     final VersionedTextDocumentIdentifier text = request.getTextDocument();
                     @SuppressWarnings("unchecked")
                     final CompletionParseService<ParsedDocument, ChangeDocumentRequest.TextDocumentContentChangeEvent, ParseException> parser = scriptSession.getParser();
                     parser.update(text.getUri(), Integer.toString(text.getVersion()), request.getContentChangesList());
+                    final long beforeSafely = System.nanoTime();
+                    log.warn().append("change beforeSafely: ").append(timeFmt(beforeSafely - inSubmit)).endl();
                     safelyExecute(() -> {
+                        final long afterSafely = System.nanoTime();
+                        log.warn().append("change afterSafely: ").append(timeFmt(afterSafely - beforeSafely)).endl();
                         responseObserver.onNext(ChangeDocumentResponse.getDefaultInstance());
                         responseObserver.onCompleted();
+                        log.warn().append("change total latency: ").append(timeFmt(System.nanoTime() - start)).endl();
                     });
                 });
         });
     }
     @Override
     public void getCompletionItems(GetCompletionItemsRequest request, StreamObserver<GetCompletionItemsResponse> responseObserver) {
+        final long start = System.nanoTime();
+        log.warn().append("complete start: ").endl();
         GrpcUtil.rpcWrapper(log, responseObserver, () -> {
+            final long inWrapper = System.nanoTime();
+            log.warn().append("complete inWrapper: ").append(timeFmt(inWrapper - start)).endl();
             final SessionState session = sessionService.getCurrentSession();
+            final long gotSession = System.nanoTime();
+            log.warn().append("complete gotSession: ").append(timeFmt(gotSession - inWrapper)).endl();
 
             SessionState.ExportObject<ScriptSession> exportedConsole = session.getExport(request.getConsoleId());
             final ScriptSession scriptSession = exportedConsole.get();
+            final long resolvedSession = System.nanoTime();
+            log.warn().append("complete resolvedSession: ").append(timeFmt(resolvedSession - gotSession)).endl();
             session
                 .nonExport()
                 .require(exportedConsole)
                 .onError(responseObserver::onError)
                 .submit(()->{
+                    final long inSubmit = System.nanoTime();
+                    log.warn().append("complete inSubmit: ").append(timeFmt(inSubmit - resolvedSession)).endl();
 
                     final VersionedTextDocumentIdentifier doc = request.getTextDocument();
                     final VariableProvider vars = scriptSession.getVariableProvider();
@@ -313,9 +378,14 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
                                     item -> item.setInsertTextFormat(2).build()
                             ).collect(Collectors.toSet())).build();
 
+                    final long gotItems = System.nanoTime();
+                    log.warn().append("complete gotItems: ").append(timeFmt(gotItems - inSubmit)).endl();
                     safelyExecute(() -> {
                         responseObserver.onNext(mangledResults);
                         responseObserver.onCompleted();
+                        final long done = System.nanoTime();
+                        log.warn().append("complete last step: ").append(timeFmt(done - gotItems)).endl();
+                        log.warn().append("complete Total Latency: ").append(timeFmt(done - start)).endl();
                     });
                 });
         });
