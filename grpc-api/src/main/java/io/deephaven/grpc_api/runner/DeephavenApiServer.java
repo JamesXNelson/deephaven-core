@@ -14,6 +14,8 @@ import io.deephaven.proto.backplane.script.grpc.ConsoleServiceGrpc;
 import io.deephaven.util.process.ProcessEnvironment;
 import io.deephaven.util.process.ShutdownManager;
 import io.grpc.Server;
+import io.grpc.health.v1.HealthCheckResponse;
+import io.grpc.protobuf.services.HealthStatusManager;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -23,6 +25,7 @@ import java.io.PrintStream;
 import java.util.concurrent.TimeUnit;
 
 public class DeephavenApiServer {
+
     @Singleton
     @Component(modules = {
             DeephavenApiServerModule.class,
@@ -62,19 +65,26 @@ public class DeephavenApiServer {
         // Close outstanding sessions to give any gRPCs closure.
         ProcessEnvironment.getGlobalShutdownManager().registerTask(ShutdownManager.OrderingCategory.MIDDLE, sessionService::closeAllSessions);
 
-        // Finally wait for gRPC to exit now.
-        ProcessEnvironment.getGlobalShutdownManager().registerTask(ShutdownManager.OrderingCategory.LAST, () -> {
-            try {
-                if (!server.server.awaitTermination(10, TimeUnit.SECONDS)) {
-                    log.error().append("The gRPC server did not terminate in a reasonable amount of time. Invoking shutdownNow().").endl();
-                    server.server.shutdownNow();
-                }
-            } catch (final InterruptedException ignored) {
-            }
-        });
+        try {
 
-        server.start();
-        server.blockUntilShutdown();
+            // Finally wait for gRPC to exit now.
+            ProcessEnvironment.getGlobalShutdownManager().registerTask(ShutdownManager.OrderingCategory.LAST, () -> {
+                try {
+                    if (!server.server.awaitTermination(10, TimeUnit.SECONDS)) {
+                        log.error().append("The gRPC server did not terminate in a reasonable amount of time. Invoking shutdownNow().").endl();
+                        server.server.shutdownNow();
+                    }
+                } catch (final InterruptedException ignored) {
+                }
+            });
+
+            server.start();
+            server.blockUntilShutdown();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            Thread.sleep(60_000);
+            throw t;
+        }
     }
 
     private static final Logger log = LoggerFactory.getLogger(DeephavenApiServer.class);
@@ -83,17 +93,20 @@ public class DeephavenApiServer {
     private final LiveTableMonitor ltm;
     private final LogInit logInit;
     private final ConsoleServiceGrpcImpl consoleService;
+    private final HealthStatusManager healthStatusManager;
 
     @Inject
     public DeephavenApiServer(
             final Server server,
             final LiveTableMonitor ltm,
             final LogInit logInit,
-            final ConsoleServiceGrpcImpl consoleService) {
+            final ConsoleServiceGrpcImpl consoleService,
+            final HealthStatusManager healthStatusManager) {
         this.server = server;
         this.ltm = ltm;
         this.logInit = logInit;
         this.consoleService = consoleService;
+        this.healthStatusManager = healthStatusManager;
     }
 
     private void start() throws IOException {
@@ -113,6 +126,7 @@ public class DeephavenApiServer {
 
         log.info().append("Starting server...").endl();
         server.start();
+        healthStatusManager.setStatus("", HealthCheckResponse.ServingStatus.SERVING);
     }
 
     private void blockUntilShutdown() throws InterruptedException {

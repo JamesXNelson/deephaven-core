@@ -20,6 +20,7 @@ import io.grpc.BindableService;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.ServerInterceptor;
+import io.grpc.protobuf.services.HealthStatusManager;
 import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Named;
@@ -67,9 +68,15 @@ public class DeephavenApiServerModule {
         return builder.directExecutor().build();
     }
 
+    @Provides
+    @Singleton
+    static HealthStatusManager healthStatusManager() {
+        return new HealthStatusManager();
+    }
+
     @Provides @ElementsIntoSet
-    static Set<BindableService> primeServices() {
-        return Collections.emptySet();
+    static Set<BindableService> primeServices(HealthStatusManager healthStatusManager) {
+        return Collections.singleton(healthStatusManager.getHealthService());
     }
 
     @Provides @ElementsIntoSet

@@ -4,7 +4,7 @@ WORKDIR /usr/src/app
 FROM node as build
 ARG WEB_VERSION=0.1.5
 
-# Pull in the published package from npmjs and extract is
+# Pull in the published package from npmjs and extract it
 RUN set -eux; \
     npm pack @deephaven/code-studio@${WEB_VERSION}; \
     tar -xf deephaven-code-studio-${WEB_VERSION}.tgz; \
