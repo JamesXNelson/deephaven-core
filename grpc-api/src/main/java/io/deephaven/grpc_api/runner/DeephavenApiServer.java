@@ -1,5 +1,6 @@
 package io.deephaven.grpc_api.runner;
 
+import io.deephaven.configuration.Configuration;
 import io.deephaven.db.util.AbstractScriptSession;
 import io.deephaven.grpc_api.console.ConsoleServiceGrpcImpl;
 import io.deephaven.grpc_api.session.SessionService;
@@ -48,9 +49,10 @@ public class DeephavenApiServer {
     }
 
     public static void startMain(PrintStream out, PrintStream err) throws IOException, InterruptedException {
+        Configuration conf = Configuration.getInstance();
         final ServerComponent injector = DaggerDeephavenApiServer_ServerComponent
                 .builder()
-                .withPort(8080)
+                .withPort(conf.getIntegerWithDefault("grpc-api.port", 8888))
                 .withSchedulerPoolSize(4)
                 .withSessionTokenExpireTmMs(300000) // defaults to 5 min
                 .withOut(out)

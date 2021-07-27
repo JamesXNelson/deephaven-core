@@ -88,6 +88,11 @@ docker {
   dockerCreateDockerfile {
     //volume("/app/resources")
 
+    runCommand("chmod 777 /tmp")
+    runCommand("ls -la /tmp")
+
+    user("1000")
+
     copyFile('licenses/', '/')
     copyFile('health_probe/', '/health')
 
