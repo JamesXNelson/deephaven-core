@@ -24,7 +24,7 @@ services:
       - JAVA_TOOL_OPTIONS=-Xmx4g -Dio.deephaven.console.type=${IO_DEEPHAVEN_CONSOLE_TYPE}
 
     expose:
-      - '8080'
+      - '8888'
     ports:
       - '5005:5005'        # For remote debugging (change if using different port)
 
@@ -51,7 +51,7 @@ services:
   web:
     image: deephaven/web:local-build
     expose:
-      - "80"
+      - "8080"
     volumes:
       - ./docker/core/data:/data
     deploy:
@@ -64,7 +64,7 @@ services:
   grpc-proxy:
     image: deephaven/grpc-proxy:local-build
     environment:
-      - BACKEND_ADDR=grpc-api:8080
+      - BACKEND_ADDR=grpc-api:8888
     depends_on:
       - grpc-api
     expose:
@@ -85,7 +85,7 @@ services:
       - grpc-proxy
       - grpc-api
     ports:
-      - "${PORT}:10000"
+      - "10000:10000"
       - '9090:9090' #envoy admin
     deploy:
       resources:
