@@ -1506,7 +1506,8 @@ public class ChunkerCompleter implements CompletionHandler<ParsedDocument> {
         return (String)ns.jjtAccept(new ChunkerDefaultVisitor() {
             @Override
             public Object defaultVisit(SimpleNode node, Object data) {
-                return unsupported(node);
+                unsupported(node);
+                return "";
             }
 
             @Override
@@ -1525,7 +1526,8 @@ public class ChunkerCompleter implements CompletionHandler<ParsedDocument> {
         return (String)ns.jjtAccept(new ChunkerDefaultVisitor() {
             @Override
             public Object defaultVisit(SimpleNode node, Object data) {
-                return unsupported(node);
+                unsupported(node);
+                return "";
             }
 
             @Override

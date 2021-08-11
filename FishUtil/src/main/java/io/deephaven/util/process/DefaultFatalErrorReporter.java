@@ -29,6 +29,10 @@ public class DefaultFatalErrorReporter extends FatalErrorReporterBase {
         // Instead, we log to a PrintStream, ideally the original System.err.
         err.println(String.format("%s: %s", initiateShutdown ? "Initiating shutdown due to" : "After shutdown initiated", message));
         throwable.printStackTrace(err);
+        if (err != System.err) {
+            throwable.printStackTrace(System.err);
+        }
+        err.flush();
 
         if (initiateShutdown) {
             // We can't universally call System.exit(...) on this thread, unless we have very tight
