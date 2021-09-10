@@ -12,22 +12,36 @@ import io.deephaven.db.v2.sources.chunk.ShortChunk;
 import io.deephaven.db.v2.sources.chunk.Chunk;
 import io.deephaven.db.v2.sources.chunk.WritableChunk;
 import io.deephaven.libs.primitives.ShortPrimitives;
+import io.deephaven.qst.type.ShortType;
+import io.deephaven.qst.type.DbPrimitiveArrayType;
 import io.deephaven.util.annotations.FinalDefault;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
 
-public interface DbShortArray extends DbArrayBase {
+public interface DbShortArray extends DbArrayBase<DbShortArray> {
 
     long serialVersionUID = -6562228894877343013L;
 
+    static DbPrimitiveArrayType<DbShortArray, Short> type() {
+        return DbPrimitiveArrayType.of(DbShortArray.class, ShortType.instance());
+    }
+
     short get(long i);
+
+    @Override
     DbShortArray subArray(long fromIndex, long toIndex);
+
+    @Override
     DbShortArray subArrayByPositions(long [] positions);
+
+    @Override
     short[] toArray();
+
+    @Override
     long size();
-    DbArray toDbArray();
+
     short getPrev(long i);
 
     @Override
@@ -36,7 +50,14 @@ public interface DbShortArray extends DbArrayBase {
         return short.class;
     }
 
+    @Override
+    @FinalDefault
+    default String toString(final int prefixLength) {
+        return toString(this, prefixLength);
+    }
+
     /** Return a version of this DbArrayBase that is flattened out to only reference memory.  */
+    @Override
     DbShortArray getDirect();
 
     @Override
@@ -60,15 +81,16 @@ public interface DbShortArray extends DbArrayBase {
     /**
      * Helper method for implementing {@link Object#toString()}.
      *
-     * @param array The DbShortArray to convert to a String
+     * @param array       The DbShortArray to convert to a String
+     * @param prefixLength The maximum prefix of the array to convert
      * @return The String representation of array
      */
-    static String toString(@NotNull final DbShortArray array) {
+    static String toString(@NotNull final DbShortArray array, final int prefixLength) {
         if (array.isEmpty()) {
             return "[]";
         }
         final StringBuilder builder = new StringBuilder("[");
-        final int displaySize = (int) Math.min(array.size(), 10);
+        final int displaySize = (int) Math.min(array.size(), prefixLength);
         builder.append(primitiveShortValToString(array.get(0)));
         for (int ei = 1; ei < displaySize; ++ei) {
             builder.append(',').append(primitiveShortValToString(array.get(ei)));
@@ -140,7 +162,7 @@ public interface DbShortArray extends DbArrayBase {
 
         @Override
         public final String toString() {
-            return DbShortArray.toString(this);
+            return DbShortArray.toString(this, 10);
         }
 
         @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")

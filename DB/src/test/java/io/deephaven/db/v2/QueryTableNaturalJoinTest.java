@@ -132,7 +132,6 @@ public class QueryTableNaturalJoinTest extends QueryTableTestBase {
         }
     }
 
-    @Category(OutOfBandTest.class)
     public void testNaturalJoinIncremental() {
         setExpectError(false);
 
@@ -455,8 +454,8 @@ public class QueryTableNaturalJoinTest extends QueryTableTestBase {
             final Table cj = left.naturalJoin(right, "Symbol");
             TableTools.showWithIndex(cj);
             fail("Expected exception.");
-        } catch (RuntimeException rte) {
-            assertEquals("More than one right side mapping for A", rte.getMessage());
+        } catch (IllegalStateException e) {
+            assertEquals("More than one right side mapping for A", e.getMessage());
         }
 
         // build from left
@@ -466,10 +465,75 @@ public class QueryTableNaturalJoinTest extends QueryTableTestBase {
             final Table cj2 = left2.naturalJoin(right2, "Symbol");
             TableTools.showWithIndex(cj2);
             fail("Expected exception");
-        } catch (RuntimeException rte) {
-            assertEquals("More than one right side mapping for A", rte.getMessage());
+        } catch (IllegalStateException e) {
+            assertEquals("More than one right side mapping for A", e.getMessage());
         }
     }
+
+    public void testNaturalJoinDuplicateRightsRefreshingRight() {
+        // initial case
+        final Table left = testTable(c("Symbol", "A", "B"), c("LeftSentinel", 1, 2));
+        final Table right = testRefreshingTable(c("Symbol", "A", "A"), c("RightSentinel", 10, 11));
+
+        try {
+            final Table cj = left.naturalJoin(right, "Symbol");
+            TableTools.showWithIndex(cj);
+            fail("Expected exception.");
+        } catch (IllegalStateException rte) {
+            assertEquals("Duplicate right key for A", rte.getMessage());
+        }
+
+        // bad right key added
+        final QueryTable right2 = testRefreshingTable(c("Symbol", "A"), c("RightSentinel", 10));
+        final Table cj2 = left.naturalJoin(right2, "Symbol");
+        assertTableEquals(newTable(col("Symbol", "A", "B"), intCol("LeftSentinel", 1, 2), intCol("RightSentinel", 10, NULL_INT)), cj2);
+
+        final ErrorListener listener = new ErrorListener((DynamicTable)cj2);
+        ((DynamicTable) cj2).listenForUpdates(listener);
+
+        try (final ErrorExpectation ignored = new ErrorExpectation()) {
+            LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
+                TstUtils.addToTable(right2, i(3), c("Symbol", "A"), intCol("RightSentinel", 10));
+                right2.notifyListeners(i(3), i(), i());
+            });
+        }
+
+        assertNotNull(listener.originalException);
+        assertEquals("Duplicate right key for A", listener.originalException.getMessage());
+    }
+
+    public void testNaturalJoinDuplicateRightsRefreshingBoth() {
+        // build from right
+        final Table left = testRefreshingTable(c("Symbol", "A", "B"), c("LeftSentinel", 1, 2));
+        final Table right = testRefreshingTable(c("Symbol", "A", "A"), c("RightSentinel", 10, 11));
+
+        try {
+            final Table cj = left.naturalJoin(right, "Symbol");
+            TableTools.showWithIndex(cj);
+            fail("Expected exception.");
+        } catch (IllegalStateException rte) {
+            assertEquals("Duplicate right key for A", rte.getMessage());
+        }
+
+        // bad right key added
+        final QueryTable right2 = testRefreshingTable(c("Symbol", "A"), c("RightSentinel", 10));
+        final Table cj2 = left.naturalJoin(right2, "Symbol");
+        assertTableEquals(newTable(col("Symbol", "A", "B"), intCol("LeftSentinel", 1, 2), intCol("RightSentinel", 10, NULL_INT)), cj2);
+
+        final ErrorListener listener = new ErrorListener((DynamicTable)cj2);
+        ((DynamicTable) cj2).listenForUpdates(listener);
+
+        try (final ErrorExpectation ignored = new ErrorExpectation()) {
+            LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
+                TstUtils.addToTable(right2, i(3), c("Symbol", "A"), intCol("RightSentinel", 10));
+                right2.notifyListeners(i(3), i(), i());
+            });
+        }
+
+        assertNotNull(listener.originalException);
+        assertEquals("Duplicate right key for A", listener.originalException.getMessage());
+    }
+
 
     public void testNaturalJoinReinterprets() {
         final Table left = testTable(c("JBool", true, false, null, true), c("LeftSentinel", 1, 2, 3, 4));
@@ -1294,7 +1358,6 @@ public class QueryTableNaturalJoinTest extends QueryTableTestBase {
         assertEquals(asList(1, 2, 3), asList(pairMatch.getColumn("v").get(0, 3)));
     }
 
-
     public void testSymbolTableJoin() throws IOException {
         diskBackedTestHarness((left, right) -> {
             final Table result = left.naturalJoin(right, "Symbol");
@@ -1310,8 +1373,8 @@ public class QueryTableNaturalJoinTest extends QueryTableTestBase {
         final File rightDirectory = Files.createTempDirectory("QueryTableJoinTest-Right").toFile();
 
         try {
-            final Table leftTable = makeLeftDiskTable(leftDirectory);
-            final Table rightTable = makeRightDiskTable(rightDirectory);
+            final Table leftTable = makeLeftDiskTable(new File(leftDirectory, "Left.parquet"));
+            final Table rightTable = makeRightDiskTable(new File(rightDirectory, "Right.parquet"));
 
             testFunction.accept(leftTable, rightTable);
 
@@ -1324,25 +1387,25 @@ public class QueryTableNaturalJoinTest extends QueryTableTestBase {
     }
 
     @NotNull
-    private Table makeLeftDiskTable(File leftDirectory) throws IOException {
+    private Table makeLeftDiskTable(File leftLocation) throws IOException {
         final TableDefinition leftDefinition = TableDefinition.of(
                 ColumnDefinition.ofString("Symbol"),
                 ColumnDefinition.ofInt("LeftSentinel"));
         final String [] leftSyms = new String[]{"Apple", "Banana", "Cantaloupe", "DragonFruit",
                 "Apple", "Cantaloupe", "Banana", "Banana", "Cantaloupe"};
         final Table leftTable = newTable(stringCol("Symbol", leftSyms)).update("LeftSentinel=i");
-        TableManagementTools.writeTable(leftTable, leftDefinition, leftDirectory, TableManagementTools.StorageFormat.Parquet);
-        return TableManagementTools.readTable(leftDirectory);
+        ParquetTools.writeTable(leftTable, leftLocation, leftDefinition);
+        return ParquetTools.readTable(leftLocation);
     }
 
     @NotNull
-    private Table makeRightDiskTable(File rightDirectory) throws IOException {
+    private Table makeRightDiskTable(File rightLocation) throws IOException {
         final TableDefinition rightDefinition = TableDefinition.of(
                 ColumnDefinition.ofString("Symbol"),
                 ColumnDefinition.ofInt("RightSentinel"));
         final String [] rightSyms = new String[]{"Elderberry", "Apple", "Banana", "Cantaloupe"};
         final Table rightTable = newTable(stringCol("Symbol", rightSyms)).update("RightSentinel=100+i");
-        TableManagementTools.writeTable(rightTable, rightDefinition, rightDirectory, TableManagementTools.StorageFormat.Parquet);
-        return TableManagementTools.readTable(rightDirectory);
+        ParquetTools.writeTable(rightTable, rightLocation, rightDefinition);
+        return ParquetTools.readTable(rightLocation);
     }
 }

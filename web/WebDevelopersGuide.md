@@ -1076,6 +1076,7 @@ This enum describes the name of each supported operation/aggregation type when c
  * `MAX` - The maximum value in the specified column. Can apply to any column type which is Comparable in Java. String
  value is "Max".
  * `SUM` - The sum of all values in the specified column. Can only apply to numeric types. String value is "Sum".
+ * `ABS_SUM` - The sum of all values, as their distance from zero, in the specified column. Can only apply to numeric types. String value is “AbsSum”.
  * `VAR` - The variance of all values in the specified column. Can only apply to numeric types. String value is "Var".
  * `AVG` - The average of all values in the specified column. Can only apply to numeric types. String value is "Avg".
  * `STD` - The standard deviation of all values in the specified column. Can only apply to numeric types. String value is
@@ -1100,6 +1101,9 @@ This enum describes the name of each supported operation/aggregation type when c
 
 ##### Class `IdeConnection`
 
+###### Constructor
+ * `new dh.IdeConnection(String websocketUrl, IdeConnectionOptions options)` - creates a new instance, from which console sessions can be made. `options` are optional.
+
 ###### Methods
 
  * `addEventListener(String eventType, Function eventListener)`
@@ -1112,6 +1116,11 @@ This enum describes the name of each supported operation/aggregation type when c
 
  * `String websocketUrl` - the url used when connecting to the server. Read-only.
  * `String serviceId` - The name of the service that should be authenticated to on the server. Read-only.
+
+##### Class `IdeConnectionOptions`
+###### Properties
+ * `String authToken` - base 64 encoded auth token
+ * `String serviceId` - The service ID to use for the connection
 
 ##### Class `IdeSession`
 

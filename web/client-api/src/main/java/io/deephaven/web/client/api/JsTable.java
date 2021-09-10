@@ -2,16 +2,20 @@ package io.deephaven.web.client.api;
 
 import elemental2.core.Global;
 import elemental2.core.JsArray;
-import elemental2.core.JsObject;
 import elemental2.core.JsString;
 import elemental2.dom.CustomEventInit;
 import elemental2.dom.DomGlobal;
 import elemental2.promise.IThenable.ThenOnFulfilledCallbackFn;
 import elemental2.promise.Promise;
 import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.AsOfJoinTablesRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.JoinTablesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.CrossJoinTablesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ExactJoinTablesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.LeftJoinTablesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.NaturalJoinTablesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.RunChartDownsampleRequest;
 import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.SelectDistinctRequest;
 import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.SnapshotTableRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.runchartdownsamplerequest.ZoomRange;
 import io.deephaven.web.client.api.batch.RequestBatcher;
 import io.deephaven.web.client.api.filter.FilterCondition;
 import io.deephaven.web.client.api.input.JsInputTable;
@@ -205,19 +209,6 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
     @JsProperty(name = "hasInputTable")
     public boolean hasInputTable() {
         return hasInputTable;
-    }
-
-    @JsProperty
-    public JsTotalsTableConfig getTotalsTableConfig() {
-        // we want to communicate to the JS dev that there is no default config, so we allow
-        // returning null here, rather than a default config. They can then easily build a
-        // default config, but without this ability, there is no way to indicate that the
-        // config omitted a totals table
-        String config = lastVisibleState().getTableDef().getAttributes().getTotalsTableConfig();
-        if (config == null) {
-            return null;
-        }
-        return JsTotalsTableConfig.parse(config);
     }
 
     @JsMethod
@@ -551,7 +542,11 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         // by just creating a new, fresh state.  This should be an optional flatten()/copy() step instead.
         String[] columnNames = Arrays.stream(columns).map(Column::getName).toArray(String[]::new);
         final ClientTableState distinct = workerConnection.newState((c, cts, metadata) -> {
-                    workerConnection.tableServiceClient().selectDistinct(new SelectDistinctRequest(), metadata, c::apply);
+                    SelectDistinctRequest request = new SelectDistinctRequest();
+                    request.setSourceId(state.getHandle().makeTableReference());
+                    request.setResultId(cts.getHandle().makeTicket());
+                    request.setColumnNamesList(columnNames);
+                    workerConnection.tableServiceClient().selectDistinct(request, metadata, c::apply);
                 },
                 "selectDistinct " + Arrays.toString(columnNames)
         );
@@ -570,13 +565,27 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         }
         return Promise.resolve(new JsTable(this));
     }
-
-    @JsMethod
-    public Promise<JsTotalsTable> getTotalsTable(@JsOptional Object config) {
+    // TODO: #37: Need SmartKey support for this functionality
+    // @JsMethod
+    public Promise<JsTotalsTable> getTotalsTable(/* @JsOptional */Object config) {
         // fetch the handle and wrap it in a new jstable. listen for changes
         // on the parent table, and re-fetch each time.
 
         return fetchTotals(config, this::lastVisibleState);
+    }
+
+    // TODO: #37: Need SmartKey support for this functionality
+    // @JsMethod
+    public JsTotalsTableConfig getTotalsTableConfig() {
+        // we want to communicate to the JS dev that there is no default config, so we allow
+        // returning null here, rather than a default config. They can then easily build a
+        // default config, but without this ability, there is no way to indicate that the
+        // config omitted a totals table
+        String config = lastVisibleState().getTableDef().getAttributes().getTotalsTableConfig();
+        if (config == null) {
+            return null;
+        }
+        return JsTotalsTableConfig.parse(config);
     }
 
     private Promise<JsTotalsTable> fetchTotals(Object config, JsProvider<ClientTableState> state) {
@@ -686,8 +695,9 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         }
     }
 
-    @JsMethod
-    public Promise<JsTotalsTable> getGrandTotalsTable(@JsOptional Object config) {
+    // TODO: #37: Need SmartKey support for this functionality
+    // @JsMethod
+    public Promise<JsTotalsTable> getGrandTotalsTable(/* @JsOptional */Object config) {
         // As in getTotalsTable, but this time we want to skip any filters - this could mean use the
         // most-derived table which has no filter, or the least-derived table which has all custom columns.
         // Currently, these two mean the same thing.
@@ -701,7 +711,8 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         });
     }
 
-    @JsMethod
+    // TODO: #37: Need SmartKey support for this functionality
+    // @JsMethod
     public Promise<JsTreeTable> rollup(Object configObject) {
         Objects.requireNonNull(configObject, "Table.rollup configuration");
         final JsRollupConfig config;
@@ -719,7 +730,8 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         }, "rollup " + Global.JSON.stringify(config)).refetch(this, workerConnection.metadata()).then(state -> new JsTreeTable(state, workerConnection).finishFetch());
     }
 
-    @JsMethod
+    // TODO: #37: Need SmartKey support for this functionality
+    // @JsMethod
     public Promise<JsTreeTable> treeTable(Object configObject) {
         Objects.requireNonNull(configObject, "Table.treeTable configuration");
         final JsTreeTableConfig config;
@@ -785,39 +797,120 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
     }
 
     @JsMethod
-    public Promise<JsTable> join(String joinType, JsTable rightTable, JsArray<String> columnsToMatch, @JsOptional JsArray<String> columnsToAdd, @JsOptional String asOfMatchRule) {
-        if (rightTable.workerConnection != workerConnection) {
-            throw new IllegalStateException("Table argument passed to join is not from the same worker as current table");
-        }
-        final JsTableFetch joinFetch;
+    @Deprecated
+    public Promise<JsTable> join(Object joinType, JsTable rightTable, JsArray<String> columnsToMatch,
+                                 @JsOptional JsArray<String> columnsToAdd, @JsOptional Object asOfMatchRule) {
         if (joinType.equals("AJ") || joinType.equals("RAJ")) {
-            joinFetch = (c, state, metadata) -> {
-                AsOfJoinTablesRequest request = new AsOfJoinTablesRequest();
-                request.setLeftId(state().getHandle().makeTableReference());
-                request.setRightId(rightTable.state().getHandle().makeTableReference());
-                request.setResultId(state.getHandle().makeTicket());
-                request.setColumnsToMatchList(columnsToMatch);
-                request.setColumnsToAddList(columnsToAdd);
-                if (asOfMatchRule != null) {
-                    request.setAsOfMatchRule(Js.asPropertyMap(AsOfJoinTablesRequest.MatchRule).getAny(asOfMatchRule).asDouble());
-                }
-                workerConnection.tableServiceClient().asOfJoinTables(request, metadata, c::apply);
-            };
-
-        } else if (Js.asPropertyMap(JoinTablesRequest.Type).has(joinType)){
-            joinFetch = (c, state, metadata) -> {
-                JoinTablesRequest request = new JoinTablesRequest();
-                request.setJoinType(Js.asPropertyMap(JoinTablesRequest.Type).getAny(joinType).asDouble());
-                request.setLeftId(state().getHandle().makeTableReference());
-                request.setRightId(rightTable.state().getHandle().makeTableReference());
-                request.setResultId(state.getHandle().makeTicket());
-                request.setColumnsToMatchList(columnsToMatch);
-                request.setColumnsToAddList(columnsToAdd);
-            };
+            return asOfJoin(rightTable, columnsToMatch, columnsToAdd, (String)asOfMatchRule);
+        } else if (joinType.equals("CROSS_JOIN")) {
+            return crossJoin(rightTable, columnsToMatch, columnsToAdd, null);
+        } else if (joinType.equals("EXACT_JOIN")) {
+            return exactJoin(rightTable, columnsToMatch, columnsToAdd);
+        } else if (joinType.equals("LEFT_JOIN")) {
+            return leftJoin(rightTable, columnsToMatch, columnsToAdd);
+        } else if (joinType.equals("NATURAL_JOIN")) {
+            return naturalJoin(rightTable, columnsToMatch, columnsToAdd);
         } else {
             throw new IllegalArgumentException("Unsupported join type " + joinType);
         }
-        return workerConnection.newState(joinFetch, "join(" + joinType + ", " + rightTable + ", " + columnsToMatch + ", " + columnsToAdd + "," + asOfMatchRule + ")").refetch(this, workerConnection.metadata()).then(state -> Promise.resolve(new JsTable(workerConnection, state)));
+    }
+
+    @JsMethod
+    public Promise<JsTable> asOfJoin(JsTable rightTable, JsArray<String> columnsToMatch,
+                                     @JsOptional JsArray<String> columnsToAdd, @JsOptional String asOfMatchRule) {
+        if (rightTable.workerConnection != workerConnection) {
+            throw new IllegalStateException("Table argument passed to join is not from the same worker as current table");
+        }
+        return workerConnection.newState((c, state, metadata) -> {
+            AsOfJoinTablesRequest request = new AsOfJoinTablesRequest();
+            request.setLeftId(state().getHandle().makeTableReference());
+            request.setRightId(rightTable.state().getHandle().makeTableReference());
+            request.setResultId(state.getHandle().makeTicket());
+            request.setColumnsToMatchList(columnsToMatch);
+            request.setColumnsToAddList(columnsToAdd);
+            if (asOfMatchRule != null) {
+                request.setAsOfMatchRule(Js.asPropertyMap(AsOfJoinTablesRequest.MatchRule).getAny(asOfMatchRule).asDouble());
+            }
+            workerConnection.tableServiceClient().asOfJoinTables(request, metadata, c::apply);
+        }, "asOfJoin(" + rightTable + ", " + columnsToMatch + ", " + columnsToAdd + "," + asOfMatchRule + ")")
+                .refetch(this, workerConnection.metadata())
+                .then(state -> Promise.resolve(new JsTable(workerConnection, state)));
+    }
+
+    @JsMethod
+    public Promise<JsTable> crossJoin(JsTable rightTable, JsArray<String> columnsToMatch,
+                                 @JsOptional JsArray<String> columnsToAdd, @JsOptional Double reserve_bits) {
+        if (rightTable.workerConnection != workerConnection) {
+            throw new IllegalStateException("Table argument passed to join is not from the same worker as current table");
+        }
+        return workerConnection.newState((c, state, metadata) -> {
+            CrossJoinTablesRequest request = new CrossJoinTablesRequest();
+            request.setLeftId(state().getHandle().makeTableReference());
+            request.setRightId(rightTable.state().getHandle().makeTableReference());
+            request.setResultId(state.getHandle().makeTicket());
+            request.setColumnsToMatchList(columnsToMatch);
+            request.setColumnsToAddList(columnsToAdd);
+            if (reserve_bits != null) {
+                request.setReserveBits(reserve_bits);
+            }
+            workerConnection.tableServiceClient().crossJoinTables(request, metadata, c::apply);
+        }, "join(" + rightTable + ", " + columnsToMatch + ", " + columnsToAdd + "," + reserve_bits + ")")
+                .refetch(this, workerConnection.metadata())
+                .then(state -> Promise.resolve(new JsTable(workerConnection, state)));
+    }
+
+    @JsMethod
+    public Promise<JsTable> exactJoin(JsTable rightTable, JsArray<String> columnsToMatch, @JsOptional JsArray<String> columnsToAdd) {
+        if (rightTable.workerConnection != workerConnection) {
+            throw new IllegalStateException("Table argument passed to join is not from the same worker as current table");
+        }
+        return workerConnection.newState((c, state, metadata) -> {
+            ExactJoinTablesRequest request = new ExactJoinTablesRequest();
+            request.setLeftId(state().getHandle().makeTableReference());
+            request.setRightId(rightTable.state().getHandle().makeTableReference());
+            request.setResultId(state.getHandle().makeTicket());
+            request.setColumnsToMatchList(columnsToMatch);
+            request.setColumnsToAddList(columnsToAdd);
+            workerConnection.tableServiceClient().exactJoinTables(request, metadata, c::apply);
+        }, "exactJoin(" + rightTable + ", " + columnsToMatch + ", " + columnsToAdd + ")")
+                .refetch(this, workerConnection.metadata())
+                .then(state -> Promise.resolve(new JsTable(workerConnection, state)));
+    }
+
+    @JsMethod
+    public Promise<JsTable> leftJoin(JsTable rightTable, JsArray<String> columnsToMatch, @JsOptional JsArray<String> columnsToAdd) {
+        if (rightTable.workerConnection != workerConnection) {
+            throw new IllegalStateException("Table argument passed to join is not from the same worker as current table");
+        }
+        return workerConnection.newState((c, state, metadata) -> {
+            LeftJoinTablesRequest request = new LeftJoinTablesRequest();
+            request.setLeftId(state().getHandle().makeTableReference());
+            request.setRightId(rightTable.state().getHandle().makeTableReference());
+            request.setResultId(state.getHandle().makeTicket());
+            request.setColumnsToMatchList(columnsToMatch);
+            request.setColumnsToAddList(columnsToAdd);
+            workerConnection.tableServiceClient().leftJoinTables(request, metadata, c::apply);
+        }, "leftJoin(" + rightTable + ", " + columnsToMatch + ", " + columnsToAdd + ")")
+                .refetch(this, workerConnection.metadata())
+                .then(state -> Promise.resolve(new JsTable(workerConnection, state)));
+    }
+
+    @JsMethod
+    public Promise<JsTable> naturalJoin(JsTable rightTable, JsArray<String> columnsToMatch, @JsOptional JsArray<String> columnsToAdd) {
+        if (rightTable.workerConnection != workerConnection) {
+            throw new IllegalStateException("Table argument passed to join is not from the same worker as current table");
+        }
+        return workerConnection.newState((c, state, metadata) -> {
+            NaturalJoinTablesRequest request = new NaturalJoinTablesRequest();
+            request.setLeftId(state().getHandle().makeTableReference());
+            request.setRightId(rightTable.state().getHandle().makeTableReference());
+            request.setResultId(state.getHandle().makeTicket());
+            request.setColumnsToMatchList(columnsToMatch);
+            request.setColumnsToAddList(columnsToAdd);
+            workerConnection.tableServiceClient().naturalJoinTables(request, metadata, c::apply);
+        }, "naturalJoin(" + rightTable + ", " + columnsToMatch + ", " + columnsToAdd + ")")
+                .refetch(this, workerConnection.metadata())
+                .then(state -> Promise.resolve(new JsTable(workerConnection, state)));
     }
 
     @JsMethod
@@ -839,7 +932,8 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         }).refetch();
     }
 
-    @JsMethod
+    // TODO: #697: Column statistic support
+    // @JsMethod
     public Promise<JsColumnStatistics> getColumnStatistics(Column column) {
         return Callbacks.<ColumnStatistics, String>promise(null, c -> {
 //            workerConnection.getServer().getColumnStatisticsForTable(state().getHandle(), column.getName(), c);
@@ -874,16 +968,19 @@ public class JsTable extends HasEventHandling implements HasTableBinding, HasLif
         JsLog.info("downsample", zoomRange, pixelCount, xCol, yCols);
         final String fetchSummary = "downsample(" + Arrays.toString(zoomRange) + ", " + pixelCount + ", " + xCol + ", " + Arrays.toString(yCols) + ")";
         return workerConnection.newState((c, state, metadata) -> {
-//            workerConnection.getServer().downsampleTable(
-//                    state().getHandle(),
-//                    state.getHandle(),
-//                    xCol,
-//                    yCols,
-//                    pixelCount,
-//                    zoomRange == null ? null : new long[] { zoomRange[0].getWrapped(), zoomRange[1].getWrapped() },
-//                    c
-//            );
-            throw new UnsupportedOperationException("downsample");
+            RunChartDownsampleRequest downsampleRequest = new RunChartDownsampleRequest();
+            downsampleRequest.setPixelCount(pixelCount);
+            if (zoomRange != null) {
+                ZoomRange zoom = new ZoomRange();
+                zoom.setMinDateNanos(Long.toString(zoomRange[0].getWrapped()));
+                zoom.setMaxDateNanos(Long.toString(zoomRange[1].getWrapped()));
+                downsampleRequest.setZoomRange(zoom);
+            }
+            downsampleRequest.setXColumnName(xCol);
+            downsampleRequest.setYColumnNamesList(yCols);
+            downsampleRequest.setSourceId(state().getHandle().makeTableReference());
+            downsampleRequest.setResultId(state.getHandle().makeTicket());
+            workerConnection.tableServiceClient().runChartDownsample(downsampleRequest, workerConnection.metadata(), c::apply);
         }, fetchSummary).refetch(this, workerConnection.metadata()).then(state -> Promise.resolve(new JsTable(workerConnection, state)));
     }
 

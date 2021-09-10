@@ -1,22 +1,27 @@
+/*
+ * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
+ */
+
 package io.deephaven.grpc_api.table;
 
-import com.google.flatbuffers.FlatBufferBuilder;
-import com.google.protobuf.ByteString;
 import com.google.rpc.Code;
 import io.deephaven.db.tables.Table;
-import io.deephaven.db.v2.sources.ColumnSource;
 import io.deephaven.grpc_api.barrage.util.BarrageSchemaUtil;
 import io.deephaven.grpc_api.session.SessionService;
 import io.deephaven.grpc_api.session.SessionState;
+import io.deephaven.grpc_api.session.TicketRouter;
 import io.deephaven.grpc_api.table.ops.GrpcTableOperation;
+import io.deephaven.grpc_api.util.ExportTicketHelper;
 import io.deephaven.grpc_api.util.GrpcUtil;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
 import io.deephaven.proto.backplane.grpc.AsOfJoinTablesRequest;
 import io.deephaven.proto.backplane.grpc.BatchTableRequest;
 import io.deephaven.proto.backplane.grpc.ComboAggregateRequest;
+import io.deephaven.proto.backplane.grpc.CrossJoinTablesRequest;
 import io.deephaven.proto.backplane.grpc.DropColumnsRequest;
 import io.deephaven.proto.backplane.grpc.EmptyTableRequest;
+import io.deephaven.proto.backplane.grpc.ExactJoinTablesRequest;
 import io.deephaven.proto.backplane.grpc.ExportedTableCreationResponse;
 import io.deephaven.proto.backplane.grpc.ExportedTableUpdateMessage;
 import io.deephaven.proto.backplane.grpc.ExportedTableUpdatesRequest;
@@ -24,8 +29,10 @@ import io.deephaven.proto.backplane.grpc.FilterTableRequest;
 import io.deephaven.proto.backplane.grpc.FlattenRequest;
 import io.deephaven.proto.backplane.grpc.HeadOrTailByRequest;
 import io.deephaven.proto.backplane.grpc.HeadOrTailRequest;
-import io.deephaven.proto.backplane.grpc.JoinTablesRequest;
+import io.deephaven.proto.backplane.grpc.LeftJoinTablesRequest;
 import io.deephaven.proto.backplane.grpc.MergeTablesRequest;
+import io.deephaven.proto.backplane.grpc.NaturalJoinTablesRequest;
+import io.deephaven.proto.backplane.grpc.RunChartDownsampleRequest;
 import io.deephaven.proto.backplane.grpc.SelectDistinctRequest;
 import io.deephaven.proto.backplane.grpc.SelectOrUpdateRequest;
 import io.deephaven.proto.backplane.grpc.SnapshotTableRequest;
@@ -53,12 +60,15 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
 
     private static final Logger log = LoggerFactory.getLogger(TableServiceGrpcImpl.class);
 
+    private final TicketRouter ticketRouter;
     private final SessionService sessionService;
     private final Map<BatchTableRequest.Operation.OpCase, GrpcTableOperation<?>> operationMap;
 
     @Inject
-    public TableServiceGrpcImpl(final SessionService sessionService,
+    public TableServiceGrpcImpl(final TicketRouter ticketRouter,
+                                final SessionService sessionService,
                                 final Map<BatchTableRequest.Operation.OpCase, GrpcTableOperation<?>> operationMap) {
+        this.ticketRouter = ticketRouter;
         this.sessionService = sessionService;
         this.operationMap = operationMap;
     }
@@ -148,11 +158,6 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
     }
 
     @Override
-    public void joinTables(final JoinTablesRequest request, final StreamObserver<ExportedTableCreationResponse> responseObserver) {
-        oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.JOIN, request, responseObserver);
-    }
-
-    @Override
     public void snapshot(final SnapshotTableRequest request, final StreamObserver<ExportedTableCreationResponse> responseObserver) {
         oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.SNAPSHOT, request, responseObserver);
     }
@@ -183,8 +188,33 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
     }
 
     @Override
+    public void crossJoinTables(final CrossJoinTablesRequest request, final StreamObserver<ExportedTableCreationResponse> responseObserver) {
+        oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.CROSS_JOIN, request, responseObserver);
+    }
+
+    @Override
+    public void naturalJoinTables(final NaturalJoinTablesRequest request, final StreamObserver<ExportedTableCreationResponse> responseObserver) {
+        oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.NATURAL_JOIN, request, responseObserver);
+    }
+
+    @Override
+    public void exactJoinTables(final ExactJoinTablesRequest request, final StreamObserver<ExportedTableCreationResponse> responseObserver) {
+        oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.EXACT_JOIN, request, responseObserver);
+    }
+
+    @Override
+    public void leftJoinTables(LeftJoinTablesRequest request, StreamObserver<ExportedTableCreationResponse> responseObserver) {
+        oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.LEFT_JOIN, request, responseObserver);
+    }
+
+    @Override
     public void asOfJoinTables(AsOfJoinTablesRequest request, StreamObserver<ExportedTableCreationResponse> responseObserver) {
         oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.AS_OF_JOIN, request, responseObserver);
+    }
+
+    @Override
+    public void runChartDownsample(RunChartDownsampleRequest request, StreamObserver<ExportedTableCreationResponse> responseObserver) {
+        oneShotOperationWrapper(BatchTableRequest.Operation.OpCase.RUN_CHART_DOWNSAMPLE, request, responseObserver);
     }
 
     @Override
@@ -206,7 +236,7 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
 
                 switch (ref.getRefCase()) {
                     case TICKET:
-                        return session.getExport(ref.getTicket());
+                        return ticketRouter.resolve(session, ref.getTicket());
                     case BATCH_OFFSET:
                         final int offset = ref.getBatchOffset();
                         if (offset < 0 || offset >= exportBuilders.size()) {
@@ -227,13 +257,13 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
 
             for (int i = 0; i < exportBuilders.size(); ++i) {
                 final BatchExportBuilder exportBuilder = exportBuilders.get(i);
-                final long exportId = exportBuilder.exportBuilder.getExportId();
+                final int exportId = exportBuilder.exportBuilder.getExportId();
 
                 final TableReference resultId;
                 if (exportId == SessionState.NON_EXPORT_ID) {
                     resultId = TableReference.newBuilder().setBatchOffset(i).build();
                 } else {
-                    resultId = TableReference.newBuilder().setTicket(SessionState.exportIdToTicket(exportId)).build();
+                    resultId = TableReference.newBuilder().setTicket(ExportTicketHelper.exportIdToTicket(exportId)).build();
                 }
 
                 exportBuilder.exportBuilder.onError((result, errorContext, dependentId) -> {
@@ -273,17 +303,12 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
     }
 
     public static ExportedTableCreationResponse buildTableCreationResponse(final TableReference tableRef, final Table table) {
-        final String[] columnNames = table.getDefinition().getColumnNamesArray();
-        final ColumnSource<?>[] columnSources = table.getColumnSources().toArray(ColumnSource.ZERO_LENGTH_COLUMN_SOURCE_ARRAY);
-        final FlatBufferBuilder builder = new FlatBufferBuilder();
-        builder.finish(BarrageSchemaUtil.makeSchemaPayload(builder, columnNames, columnSources, table.getAttributes()));
-
         return ExportedTableCreationResponse.newBuilder()
                 .setSuccess(true)
                 .setResultId(tableRef)
                 .setIsStatic(!table.isLive())
                 .setSize(table.size())
-                .setSchemaHeader(ByteString.copyFrom(builder.dataBuffer()))
+                .setSchemaHeader(BarrageSchemaUtil.schemaBytesFromTable(table))
                 .build();
     }
 
@@ -305,7 +330,7 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
 
             final List<SessionState.ExportObject<Table>> dependencies = operation.getTableReferences(request).stream()
                     .map(TableReference::getTicket)
-                    .map(session::<Table>getExport)
+                    .map((ticket) -> ticketRouter.<Table>resolve(session, ticket))
                     .collect(Collectors.toList());
 
             session.newExport(resultId)
@@ -333,7 +358,7 @@ public class TableServiceGrpcImpl extends TableServiceGrpc.TableServiceImplBase 
             operation = getOp(op.getOpCase()); // get operation from op code
             request = operation.getRequestFromOperation(op);
             final Ticket resultId = operation.getResultTicket(request);
-            exportBuilder = resultId.getId().size() == 0 ? session.nonExport() : session.newExport(resultId);
+            exportBuilder = resultId.getTicket().size() == 0 ? session.nonExport() : session.newExport(resultId);
         }
 
         void resolveDependencies(final Function<TableReference, SessionState.ExportObject<Table>> resolveReference) {

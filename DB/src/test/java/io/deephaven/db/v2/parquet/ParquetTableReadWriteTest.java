@@ -1,5 +1,6 @@
 package io.deephaven.db.v2.parquet;
 
+import io.deephaven.api.Selectable;
 import io.deephaven.base.FileUtils;
 import io.deephaven.db.tables.ColumnDefinition;
 import io.deephaven.db.tables.StringSetArrayWrapper;
@@ -7,7 +8,7 @@ import io.deephaven.db.tables.Table;
 import io.deephaven.db.tables.TableDefinition;
 import io.deephaven.db.tables.libs.QueryLibrary;
 import io.deephaven.db.tables.libs.StringSet;
-import io.deephaven.db.tables.utils.TableManagementTools;
+import io.deephaven.db.tables.utils.ParquetTools;
 import io.deephaven.db.tables.utils.TableTools;
 import io.deephaven.db.v2.QueryTable;
 import io.deephaven.db.v2.TstUtils;
@@ -22,6 +23,8 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import org.junit.experimental.categories.Category;
+
+import static org.junit.Assert.*;
 
 @Category(OutOfBandTest.class)
 public class ParquetTableReadWriteTest {
@@ -65,7 +68,7 @@ public class ParquetTableReadWriteTest {
             columns.add("someSerializable = new SomeSillyTest(i)");
         }
         return TableTools.emptyTable(size).select(
-                columns
+                Selectable.from(columns)
         );
     }
 
@@ -116,39 +119,49 @@ public class ParquetTableReadWriteTest {
 
     private void flatTable(String tableName, int size, boolean includeSerializable) {
         final Table tableToSave = getTableFlat(size, includeSerializable);
-        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test");
-        TableManagementTools.writeTable(tableToSave, tableToSave.getDefinition(), dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test.parquet");
+        ParquetTools.writeTable(tableToSave, dest);
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(tableToSave, fromDisk);
     }
 
     private void groupedTable(String tableName, int size, boolean includeSerializable) {
         final Table tableToSave = getGroupedTable(size, includeSerializable);
-        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test");
-        TableManagementTools.writeTable(tableToSave, tableToSave.getDefinition(), dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test.parquet");
+        ParquetTools.writeTable(tableToSave, dest, tableToSave.getDefinition());
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(tableToSave, fromDisk);
     }
 
     private void groupedOneColumnTable(String tableName, int size) {
         final Table tableToSave = getGroupedOneColumnTable(size);
         TableTools.show(tableToSave, 50);
-        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test");
-        TableManagementTools.writeTable(tableToSave, tableToSave.getDefinition(), dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test.parquet");
+        ParquetTools.writeTable(tableToSave, dest, tableToSave.getDefinition());
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(tableToSave, fromDisk);
     }
 
     private void testEmptyArrayStore(String tableName, int size) {
         final Table tableToSave = getEmptyArray(size);
-        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test");
-        TableManagementTools.writeTable(tableToSave, tableToSave.getDefinition(), dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_" + tableName + "_test.parquet");
+        ParquetTools.writeTable(tableToSave, dest, tableToSave.getDefinition());
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(tableToSave, fromDisk);
     }
 
     @Test
-    @Category(OutOfBandTest.class)
+    public void emptyTrivialTable() {
+        final Table t = TableTools.emptyTable(0).select("A = i");
+        assertEquals(int.class, t.getDefinition().getColumn("A").getDataType());
+        final File dest = new File(rootFile, "ParquetTest_emptyTrivialTable.parquet");
+        ParquetTools.writeTable(t, dest);
+        final Table fromDisk = ParquetTools.readTable(dest);
+        TstUtils.assertTableEquals(t, fromDisk);
+        assertEquals(t.getDefinition(), fromDisk.getDefinition());
+    }
+
+    @Test
     public void flatParquetFormat() {
         flatTable("emptyFlatParquet", 0, true);
         flatTable("smallFlatParquet", 20, true);
@@ -156,7 +169,6 @@ public class ParquetTableReadWriteTest {
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void vectorParquetFormat() {
         testEmptyArrayStore("smallEmpty", 20);
         groupedOneColumnTable("smallAggOneColumn", 20);
@@ -172,9 +184,9 @@ public class ParquetTableReadWriteTest {
             ColumnDefinition.ofInt("someInt"),
             ColumnDefinition.ofLong("someLong").withGrouping());
         final Table testTable = ((QueryTable)TableTools.emptyTable(10).select("someInt = i", "someLong  = ii % 3").by("someLong").ungroup("someInt")).withDefinitionUnsafe(definition);
-        final File dest = new File(rootFile, "ParquetTest_groupByLong_test");
-        TableManagementTools.writeTable(testTable, dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_groupByLong_test.parquet");
+        ParquetTools.writeTable(testTable, dest);
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(fromDisk, testTable);
         TestCase.assertNotNull(fromDisk.getColumnSource("someLong").getGroupToRange());
     }
@@ -185,9 +197,9 @@ public class ParquetTableReadWriteTest {
             ColumnDefinition.ofInt("someInt"),
             ColumnDefinition.ofString("someString").withGrouping());
         final Table testTable = ((QueryTable)TableTools.emptyTable(10).select("someInt = i", "someString  = `foo`").where("i % 2 == 0").by("someString").ungroup("someInt")).withDefinitionUnsafe(definition);
-        final File dest = new File(rootFile, "ParquetTest_groupByString_test");
-        TableManagementTools.writeTable(testTable, dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_groupByString_test.parquet");
+        ParquetTools.writeTable(testTable, dest);
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(fromDisk, testTable);
         TestCase.assertNotNull(fromDisk.getColumnSource("someString").getGroupToRange());
     }
@@ -199,10 +211,49 @@ public class ParquetTableReadWriteTest {
             ColumnDefinition.ofInt("someInt"),
             ColumnDefinition.fromGenericType("someBigInt", BigInteger.class).withGrouping());
         final Table testTable = ((QueryTable)TableTools.emptyTable(10).select("someInt = i", "someBigInt  =  BigInteger.valueOf(i % 3)").where("i % 2 == 0").by("someBigInt").ungroup("someInt")).withDefinitionUnsafe(definition);
-        final File dest = new File(rootFile, "ParquetTest_groupByBigInt_test");
-        TableManagementTools.writeTable(testTable, dest, TableManagementTools.StorageFormat.Parquet);
-        final Table fromDisk = TableManagementTools.readTable(dest);
+        final File dest = new File(rootFile, "ParquetTest_groupByBigInt_test.parquet");
+        ParquetTools.writeTable(testTable, dest);
+        final Table fromDisk = ParquetTools.readTable(dest);
         TstUtils.assertTableEquals(fromDisk, testTable);
         TestCase.assertNotNull(fromDisk.getColumnSource("someBigInt").getGroupToRange());
     }
+
+    private void compressionCodecTestHelper(final String codec) {
+        final String currentCodec = ParquetInstructions.getDefaultCompressionCodecName();
+        try {
+            ParquetInstructions.setDefaultCompressionCodecName(codec);
+            String path = rootFile + File.separator + "Table1.parquet";
+            final Table table1 = getTableFlat(10000, false);
+            ParquetTools.writeTable(table1, path);
+            assertTrue(new File(path).length() > 0);
+        } finally {
+            ParquetInstructions.setDefaultCompressionCodecName(currentCodec);
+        }
+    }
+
+    @Test
+    public void testParquetLzoCompressionCodec() {
+        compressionCodecTestHelper("LZO");
+    }
+
+    @Test
+    public void testParquetLz4CompressionCodec() {
+        compressionCodecTestHelper("LZ4");
+    }
+
+    @Test
+    public void testParquetBrotliCompressionCodec() {
+        compressionCodecTestHelper("BROTLI");
+    }
+
+    @Test
+    public void testParquetZstdCompressionCodec() {
+        compressionCodecTestHelper("ZSTD");
+    }
+
+    @Test
+    public void testParquetGzipCompressionCodec() {
+        compressionCodecTestHelper("GZIP");
+    }
+
 }

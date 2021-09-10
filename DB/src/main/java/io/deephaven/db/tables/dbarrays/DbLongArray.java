@@ -12,22 +12,36 @@ import io.deephaven.db.v2.sources.chunk.LongChunk;
 import io.deephaven.db.v2.sources.chunk.Chunk;
 import io.deephaven.db.v2.sources.chunk.WritableChunk;
 import io.deephaven.libs.primitives.LongPrimitives;
+import io.deephaven.qst.type.LongType;
+import io.deephaven.qst.type.DbPrimitiveArrayType;
 import io.deephaven.util.annotations.FinalDefault;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
 
-public interface DbLongArray extends DbArrayBase {
+public interface DbLongArray extends DbArrayBase<DbLongArray> {
 
     long serialVersionUID = -4934601086974582202L;
 
+    static DbPrimitiveArrayType<DbLongArray, Long> type() {
+        return DbPrimitiveArrayType.of(DbLongArray.class, LongType.instance());
+    }
+
     long get(long i);
+
+    @Override
     DbLongArray subArray(long fromIndex, long toIndex);
+
+    @Override
     DbLongArray subArrayByPositions(long [] positions);
+
+    @Override
     long[] toArray();
+
+    @Override
     long size();
-    DbArray toDbArray();
+
     long getPrev(long i);
 
     @Override
@@ -36,7 +50,14 @@ public interface DbLongArray extends DbArrayBase {
         return long.class;
     }
 
+    @Override
+    @FinalDefault
+    default String toString(final int prefixLength) {
+        return toString(this, prefixLength);
+    }
+
     /** Return a version of this DbArrayBase that is flattened out to only reference memory.  */
+    @Override
     DbLongArray getDirect();
 
     @Override
@@ -60,15 +81,16 @@ public interface DbLongArray extends DbArrayBase {
     /**
      * Helper method for implementing {@link Object#toString()}.
      *
-     * @param array The DbLongArray to convert to a String
+     * @param array       The DbLongArray to convert to a String
+     * @param prefixLength The maximum prefix of the array to convert
      * @return The String representation of array
      */
-    static String toString(@NotNull final DbLongArray array) {
+    static String toString(@NotNull final DbLongArray array, final int prefixLength) {
         if (array.isEmpty()) {
             return "[]";
         }
         final StringBuilder builder = new StringBuilder("[");
-        final int displaySize = (int) Math.min(array.size(), 10);
+        final int displaySize = (int) Math.min(array.size(), prefixLength);
         builder.append(primitiveLongValToString(array.get(0)));
         for (int ei = 1; ei < displaySize; ++ei) {
             builder.append(',').append(primitiveLongValToString(array.get(ei)));
@@ -140,7 +162,7 @@ public interface DbLongArray extends DbArrayBase {
 
         @Override
         public final String toString() {
-            return DbLongArray.toString(this);
+            return DbLongArray.toString(this, 10);
         }
 
         @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")

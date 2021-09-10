@@ -12,6 +12,7 @@ import io.deephaven.base.verify.Require;
 import io.deephaven.datastructures.util.HashCodeUtil;
 import io.deephaven.db.v2.InMemoryTable;
 import io.deephaven.db.v2.sources.ColumnSource;
+import io.deephaven.qst.column.header.ColumnHeader;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.NotNull;
 
@@ -36,9 +37,19 @@ public class TableDefinition implements Externalizable, LogOutputAppendable, Cop
     public static TableDefinition inferFrom(Map<String, ? extends ColumnSource> sources) {
         List<ColumnDefinition> definitions = new ArrayList<>(sources.size());
         for (Entry<String, ? extends ColumnSource> e : sources.entrySet()) {
-            final ColumnDefinition<?> inferred = ColumnDefinition
-              .fromGenericType(e.getKey(), e.getValue().getType(), e.getValue().getComponentType());
+            final String name = e.getKey();
+            final ColumnSource<?> source = e.getValue();
+            final ColumnDefinition<?> inferred = ColumnDefinition.fromGenericType(name, source.getType(), source.getComponentType());
             definitions.add(inferred);
+        }
+        return new TableDefinition(definitions);
+    }
+
+    public static TableDefinition from(Iterable<ColumnHeader<?>> headers) {
+        List<ColumnDefinition> definitions = new ArrayList<>();
+        for (ColumnHeader<?> columnHeader : headers) {
+            final ColumnDefinition<?> columnDefinition = ColumnDefinition.from(columnHeader);
+            definitions.add(columnDefinition);
         }
         return new TableDefinition(definitions);
     }
@@ -477,24 +488,21 @@ public class TableDefinition implements Externalizable, LogOutputAppendable, Cop
     public Table getColumnDefinitionsTable() {
         List<String> columnNames = new ArrayList<>();
         List<String> columnDataTypes = new ArrayList<>();
-        List<Boolean> columnIsVarSizeString = new ArrayList<>();
         List<String> columnTypes = new ArrayList<>();
         List<Boolean> columnPartitioning = new ArrayList<>();
         List<Boolean> columnGrouping = new ArrayList<>();
         for (ColumnDefinition<?> cDef : columns) {
             columnNames.add(cDef.getName());
             columnDataTypes.add(cDef.getDataType().getName());
-            columnIsVarSizeString.add(cDef.getIsVarSizeString());
             columnTypes.add(ColumnDefinition.COLUMN_TYPE_FORMATTER.format(cDef.getColumnType()));
             columnPartitioning.add(cDef.isPartitioning());
             columnGrouping.add(cDef.isGrouping());
 
         }
-        final String[] resultColumnNames = {"Name", "DataType", "IsVarSizeString", "ColumnType", "IsPartitioning", "IsGrouping"};
+        final String[] resultColumnNames = {"Name", "DataType", "ColumnType", "IsPartitioning", "IsGrouping"};
         final Object[] resultValues = {
                 columnNames.toArray(new String[columnNames.size()]),
                 columnDataTypes.toArray(new String[columnDataTypes.size()]),
-                columnIsVarSizeString.toArray(new Boolean[columnIsVarSizeString.size()]),
                 columnTypes.toArray(new String[columnTypes.size()]),
                 columnPartitioning.toArray(new Boolean[columnPartitioning.size()]),
                 columnGrouping.toArray(new Boolean[columnGrouping.size()])

@@ -28,15 +28,15 @@ public class RAPriQueue<T> {
     private T[] queue;
 
     /** the queue adapter instance */
-    private final Adapter<T> adapter;
+    private final Adapter<? super T> adapter;
 
     /** the class of objects we are queueing */
-    private final Class<? extends T> elementClass;
+    private final Class<? super T> elementClass;
 
     /** the size of the queue (invariant: size < queue.length - 1) */
     private int size = 0;
 
-    public RAPriQueue(int initialSize, Adapter<T> adapter, Class<? extends T> elementClass) {
+    public RAPriQueue(int initialSize, Adapter<? super T> adapter, Class<? super T> elementClass) {
         this.queue = (T[]) java.lang.reflect.Array.newInstance(elementClass, initialSize+1);
         this.adapter = adapter;
         this.elementClass = elementClass;
@@ -58,7 +58,7 @@ public class RAPriQueue<T> {
         size = 0;
     }
 
-    /** Adds an element to the timeout queue, or moves to appropriate place if already there */
+    /** Adds an element to the queue, or moves to appropriate place if already there */
     public void enter(T el) {
         int k = adapter.getPos(el);
         if ( k <= 0 ) {
@@ -80,12 +80,12 @@ public class RAPriQueue<T> {
         }
     }
 
-    /** Return the top of the timeout queue - the next timeout */
+    /** Return the top of the queue */
     public T top() {
         return queue[1];
     }
 
-    /** Remove the top element from the timeout queue, or null if the queue is empty */
+    /** Remove the top element from the queue, or null if the queue is empty */
     public T removeTop() {
         T el = queue[1];
         if ( el != null ) {
@@ -104,7 +104,7 @@ public class RAPriQueue<T> {
         return el;
     }
 
-    /** remove an arbitrary element from the timeout queue */
+    /** remove an arbitrary element from the queue */
     public void remove(T el) {
         int k = adapter.getPos(el);
         if ( k != 0 ) {
@@ -125,7 +125,7 @@ public class RAPriQueue<T> {
         //assert testInvariant("at end of remove()");
     }
 
-    /** move queue[k] up the heap until it's deadline is >= that of its parent. */
+    /** move queue[k] up the heap until it compares >= that of its parent. */
     private void fixUp(int k) {
         if ( k > 1 ) {
             T el = queue[k];
@@ -146,7 +146,7 @@ public class RAPriQueue<T> {
         }
     }
 
-    /** move queue[k] down the heap until it's deadline is <= those of its children. */
+    /** move queue[k] down the heap until it compares <= those of its children. */
     private void fixDown(int k) {
         int j = k << 1;
         if ( j <= size ) {

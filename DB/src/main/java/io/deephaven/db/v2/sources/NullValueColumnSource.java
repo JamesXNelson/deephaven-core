@@ -5,6 +5,7 @@
 package io.deephaven.db.v2.sources;
 
 import io.deephaven.base.Pair;
+import io.deephaven.base.verify.Assert;
 import io.deephaven.db.tables.ColumnDefinition;
 import io.deephaven.db.tables.TableDefinition;
 import io.deephaven.hash.KeyedObjectHashMap;
@@ -18,7 +19,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
 
 /**
@@ -35,7 +38,7 @@ public class NullValueColumnSource<T> extends AbstractColumnSource<T> implements
     };
 
     private static final KeyedObjectHashMap<Pair<Class<?>, Class<?>>, NullValueColumnSource<?>> INSTANCES = new KeyedObjectHashMap<>(KEY_TYPE);
-    private static final ColumnSource<Byte> BOOL_AS_BYTE_SOURCE = new BooleanAsByteColumnSource(getInstance(boolean.class, null));
+    private static final ColumnSource<Byte> BOOL_AS_BYTE_SOURCE = new BooleanAsByteColumnSource(getInstance(Boolean.class, null));
 
     public static <T2> NullValueColumnSource<T2> getInstance(Class<T2> clazz, @Nullable final Class elementType) {
         //noinspection unchecked,rawtypes
@@ -43,8 +46,12 @@ public class NullValueColumnSource<T> extends AbstractColumnSource<T> implements
     }
 
     public static Map<String, ColumnSource<?>> createColumnSourceMap(TableDefinition definition) {
-        return Arrays.stream(definition.getColumns())
-                .collect(Collectors.toMap(ColumnDefinition::getName, c -> getInstance(c.getDataType(), c.getComponentType())));
+        //noinspection unchecked
+        return Arrays.stream(definition.getColumns()).collect(Collectors.toMap(
+                ColumnDefinition::getName,
+                c-> getInstance(c.getDataType(), c.getComponentType()),
+                (BinaryOperator<ColumnSource<?>>) Assert::neverInvoked,
+                LinkedHashMap::new));
     }
 
     private NullValueColumnSource(Class<T> type, @Nullable final Class elementType) {

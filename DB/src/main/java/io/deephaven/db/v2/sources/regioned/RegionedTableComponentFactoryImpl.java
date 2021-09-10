@@ -4,17 +4,13 @@
 
 package io.deephaven.db.v2.sources.regioned;
 
-import io.deephaven.base.verify.Require;
-import io.deephaven.db.tables.CodecLookup;
 import io.deephaven.db.tables.ColumnDefinition;
-import io.deephaven.db.tables.libs.StringSet;
 import io.deephaven.db.tables.utils.DBDateTime;
 import io.deephaven.db.v2.ColumnSourceManager;
-import io.deephaven.util.codec.*;
+import io.deephaven.db.v2.ColumnToCodecMappings;
 import io.deephaven.util.type.TypeUtils;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.Externalizable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -47,14 +43,15 @@ public class RegionedTableComponentFactoryImpl implements RegionedTableComponent
     }
 
     @Override
-    public ColumnSourceManager createColumnSourceManager(final boolean isRefreshing, @NotNull final ColumnDefinition<?>... columnDefinitions) {
-        return new RegionedColumnSourceManager(isRefreshing, this, columnDefinitions);
+    public ColumnSourceManager createColumnSourceManager(
+            final boolean isRefreshing,
+            @NotNull final ColumnToCodecMappings codecMappings,
+            @NotNull final ColumnDefinition<?>... columnDefinitions) {
+        return new RegionedColumnSourceManager(isRefreshing, this, codecMappings, columnDefinitions);
     }
 
     /**
      * Create a new {@link RegionedColumnSource} appropriate to implement the supplied {@link ColumnDefinition}.
-     * <br><b>Note:</b> This implementation currently lets arrays fall into the catch-all (Serializable) case.
-     * <br><b>Note:</b> There is no handling for Enum(Set) assignables.  No existing tables should have legacy Enum(Set) columns.
      *
      * @param columnDefinition The column definition
      * @param <DATA_TYPE>      The data type of the column
@@ -62,13 +59,14 @@ public class RegionedTableComponentFactoryImpl implements RegionedTableComponent
      */
     @SuppressWarnings("unchecked")
     @Override
-    public <DATA_TYPE> RegionedColumnSource<DATA_TYPE> createRegionedColumnSource(@NotNull final ColumnDefinition<DATA_TYPE> columnDefinition) {
+    public <DATA_TYPE> RegionedColumnSource<DATA_TYPE> createRegionedColumnSource(
+            @NotNull final ColumnDefinition<DATA_TYPE> columnDefinition,
+            @NotNull final ColumnToCodecMappings codecMappings
+    ) {
         Class<DATA_TYPE> dataType = TypeUtils.getBoxedType(columnDefinition.getDataType());
 
         if (columnDefinition.isPartitioning()) {
-            Require.eq(dataType, "dataType", String.class);
-            Require.eqNull(columnDefinition.getSymbolTableType(), "columnDefinition.getSymbolTableType()");
-            return (RegionedColumnSource<DATA_TYPE>) new RegionedColumnSourcePartitioning();
+            return PartitioningSourceFactory.makePartitioningSource(dataType);
         }
 
         final Supplier<RegionedColumnSource<?>> simpleImplementationSupplier = SIMPLE_DATA_TYPE_TO_REGIONED_COLUMN_SOURCE_SUPPLIER.get(dataType);
@@ -78,23 +76,9 @@ public class RegionedTableComponentFactoryImpl implements RegionedTableComponent
 
         try {
             if (CharSequence.class.isAssignableFrom(dataType)) {
-                switch (columnDefinition.getSymbolTableType()) {
-                    case NONE:
-                        return new RegionedColumnSourceObject.AsValues<>(dataType,
-                                RegionedTableComponentFactory.getStringDecoder(dataType, columnDefinition));
-                    case COLUMN_LOCATION:
-                        return new RegionedColumnSourceObjectWithDictionary<>(dataType,
-                                RegionedTableComponentFactory.getStringDecoder(dataType, columnDefinition));
-                    default:
-                        throw new UnsupportedOperationException("Unknown symbol type " + columnDefinition.getSymbolTableType() +
-                                " in column definition " + columnDefinition);
-                }
-            } else if (StringSet.class.isAssignableFrom(dataType)) {
-                return (RegionedColumnSource<DATA_TYPE>) new RegionedColumnSourceStringSet(
-                        RegionedTableComponentFactory.getStringDecoder(String.class, columnDefinition));
+                return new RegionedColumnSourceWithDictionary<>(dataType, null);
             } else {
-                final ObjectDecoder<DATA_TYPE> decoder = CodecLookup.lookup(columnDefinition);
-                return new RegionedColumnSourceObject.AsValues<>(dataType, columnDefinition.getComponentType(), decoder);
+                return new RegionedColumnSourceObject.AsValues<>(dataType, columnDefinition.getComponentType());
             }
         } catch (IllegalArgumentException except) {
             throw new UnsupportedOperationException("Can't create column for " + dataType + " in column definition " + columnDefinition, except);

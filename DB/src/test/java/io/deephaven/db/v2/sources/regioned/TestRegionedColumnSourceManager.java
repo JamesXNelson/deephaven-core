@@ -1,8 +1,12 @@
 package io.deephaven.db.v2.sources.regioned;
 
+import io.deephaven.base.verify.AssertionFailure;
 import io.deephaven.db.tables.ColumnDefinition;
+import io.deephaven.db.v2.ColumnToCodecMappings;
 import io.deephaven.db.v2.LiveTableTestCase;
 import io.deephaven.db.v2.locations.*;
+import io.deephaven.db.v2.locations.impl.SimpleTableLocationKey;
+import io.deephaven.db.v2.locations.impl.TableLocationUpdateSubscriptionBuffer;
 import io.deephaven.db.v2.sources.ColumnSource;
 import io.deephaven.db.v2.utils.Index;
 import gnu.trove.map.TIntIntMap;
@@ -93,11 +97,11 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
         normalColumnSource = columnSources[NORMAL_INDEX];
 
         checking(new Expectations() {{
-            oneOf(componentFactory).createRegionedColumnSource(with(same(partitioningColumnDefinition)));
+            oneOf(componentFactory).createRegionedColumnSource(with(same(partitioningColumnDefinition)), with(ColumnToCodecMappings.EMPTY));
             will(returnValue(partitioningColumnSource));
-            oneOf(componentFactory).createRegionedColumnSource(with(same(groupingColumnDefinition)));
+            oneOf(componentFactory).createRegionedColumnSource(with(same(groupingColumnDefinition)), with(ColumnToCodecMappings.EMPTY));
             will(returnValue(groupingColumnSource));
-            oneOf(componentFactory).createRegionedColumnSource(with(same(normalColumnDefinition)));
+            oneOf(componentFactory).createRegionedColumnSource(with(same(normalColumnDefinition)), with(ColumnToCodecMappings.EMPTY));
             will(returnValue(normalColumnSource));
         }});
 
@@ -129,16 +133,21 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
         expectedPartitioningColumnGrouping = new LinkedHashMap<>();
     }
 
+    private ImmutableTableLocationKey makeTableKey(@NotNull final String internalPartitionValue, @NotNull final String columnPartitionValue) {
+        final Map<String, Comparable<?>> partitions = new LinkedHashMap<>();
+        partitions.put(partitioningColumnDefinition.getName(), columnPartitionValue);
+        partitions.put("__IP__", internalPartitionValue);
+        return new SimpleTableLocationKey(partitions);
+    }
+
     private TableLocation setUpTableLocation(final int li, @NotNull final String mockSuffix) {
-        final TableLocation tl;
         final String ip = Integer.toString(li % 2);
         final String cp = Character.toString((li / 2) == 0 ? 'A' : 'B');
-        tl = mock(TableLocation.class, "TL_" + ip + '_' + cp + mockSuffix);
+        final TableLocation tl = mock(TableLocation.class, "TL_" + ip + '_' + cp + mockSuffix);
+        final ImmutableTableLocationKey tlk = makeTableKey(ip, cp);
         checking(new Expectations() {{
-            allowing(tl).getInternalPartition();
-            will(returnValue(ip));
-            allowing(tl).getColumnPartition();
-            will(returnValue(cp));
+            allowing(tl).getKey();
+            will(returnValue(tlk));
             allowing(tl).toStringDetailed();
             will(returnValue("mocked TL_" + ip + '_' + cp + mockSuffix));
             allowing(tl).getSize();
@@ -146,6 +155,13 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
                 @Override
                 public Object invoke(Invocation invocation) {
                     return lastSizes[li];
+                }
+            });
+            allowing(tl).getIndex();
+            will(new CustomAction("Return last size") {
+                @Override
+                public Object invoke(Invocation invocation) {
+                    return Index.CURRENT_FACTORY.getFlatIndex(lastSizes[li]);
                 }
             });
         }});
@@ -275,12 +291,12 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
                             }}));
                 }
                 newExpectedIndex.insertRange(
-                        RegionedPageStore.getFirstElementIndex(regionIndex),
-                        RegionedPageStore.getFirstElementIndex(regionIndex) + size - 1
+                        RegionedColumnSource.getFirstElementIndex(regionIndex),
+                        RegionedColumnSource.getFirstElementIndex(regionIndex) + size - 1
                 );
                 expectedPartitioningColumnGrouping.computeIfAbsent(cp, cpk -> Index.FACTORY.getEmptyIndex()).insertRange(
-                        RegionedPageStore.getFirstElementIndex(regionIndex),
-                        RegionedPageStore.getFirstElementIndex(regionIndex) + size - 1
+                        RegionedColumnSource.getFirstElementIndex(regionIndex),
+                        RegionedColumnSource.getFirstElementIndex(regionIndex) + size - 1
                 );
             }
         });
@@ -304,7 +320,7 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
 
     @Test
     public void testStaticBasics() {
-        SUT = new RegionedColumnSourceManager(false, componentFactory, columnDefinitions);
+        SUT = new RegionedColumnSourceManager(false, componentFactory, ColumnToCodecMappings.EMPTY, columnDefinitions);
         assertEquals(makeColumnSourceMap(), SUT.getColumnSources());
 
         assertTrue(SUT.isEmpty());
@@ -352,7 +368,7 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
 
     @Test
     public void testStaticOverflow() {
-        SUT = new RegionedColumnSourceManager(false, componentFactory, columnDefinitions);
+        SUT = new RegionedColumnSourceManager(false, componentFactory, ColumnToCodecMappings.EMPTY, columnDefinitions);
 
         // Add a location
         SUT.addLocation(tableLocation0A);
@@ -374,7 +390,7 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
 
     @Test
     public void testRefreshing() {
-        SUT = new RegionedColumnSourceManager(true, componentFactory, columnDefinitions);
+        SUT = new RegionedColumnSourceManager(true, componentFactory, ColumnToCodecMappings.EMPTY, columnDefinitions);
         assertEquals(makeColumnSourceMap(), SUT.getColumnSources());
 
         assertTrue(SUT.isEmpty());
@@ -467,7 +483,7 @@ public class TestRegionedColumnSourceManager extends LiveTableTestCase {
         try {
             checkIndexes(SUT.refresh());
             fail("Expected exception");
-        } catch (IllegalStateException expected) {
+        } catch (AssertionFailure expected) {
             maybePrintStackTrace(expected);
         }
         assertEquals(Arrays.asList(tableLocation0A, tableLocation1A, tableLocation0B, tableLocation1B), SUT.includedLocations());

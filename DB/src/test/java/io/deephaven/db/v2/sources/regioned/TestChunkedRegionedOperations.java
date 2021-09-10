@@ -9,32 +9,23 @@ import io.deephaven.db.tables.TableDefinition;
 import io.deephaven.db.tables.libs.QueryLibrary;
 import io.deephaven.db.tables.libs.StringSet;
 import io.deephaven.db.tables.select.QueryScope;
-import io.deephaven.db.tables.utils.DBDateTime;
-import io.deephaven.db.tables.utils.DBTimeUtils;
-import io.deephaven.db.tables.utils.TableManagementTools;
-import io.deephaven.db.tables.utils.TableTools;
+import io.deephaven.db.tables.utils.*;
 import io.deephaven.db.util.BooleanUtils;
 import io.deephaven.db.util.file.TrackedFileHandleFactory;
-import io.deephaven.db.v2.NestedPartitionedDiskBackedTable;
 import io.deephaven.db.v2.QueryTable;
 import io.deephaven.db.v2.TableMap;
-import io.deephaven.db.v2.locations.*;
-import io.deephaven.db.v2.locations.local.*;
-import io.deephaven.db.v2.locations.util.TableDataRefreshService;
+import io.deephaven.db.v2.locations.local.DeephavenNestedPartitionLayout;
 import io.deephaven.db.v2.parquet.ParquetInstructions;
 import io.deephaven.db.v2.select.ReinterpretedColumn;
 import io.deephaven.db.v2.sources.AbstractColumnSource;
 import io.deephaven.db.v2.sources.ColumnSource;
+import io.deephaven.db.v2.sources.chunk.*;
 import io.deephaven.db.v2.sources.chunk.Attributes.Values;
-import io.deephaven.db.v2.sources.chunk.Chunk;
-import io.deephaven.db.v2.sources.chunk.ChunkType;
-import io.deephaven.db.v2.sources.chunk.WritableChunk;
 import io.deephaven.db.v2.utils.OrderedKeys;
 import io.deephaven.test.types.OutOfBandTest;
 import io.deephaven.util.SafeCloseableList;
 import io.deephaven.util.codec.BigIntegerCodec;
 import junit.framework.TestCase;
-import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.jetbrains.annotations.NotNull;
 import org.junit.After;
 import org.junit.Before;
@@ -45,11 +36,11 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import org.junit.experimental.categories.Category;
 
 import static io.deephaven.db.v2.TstUtils.assertTableEquals;
+import static io.deephaven.db.v2.locations.local.DeephavenNestedPartitionLayout.PARQUET_FILE_NAME;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -62,8 +53,6 @@ public class TestChunkedRegionedOperations {
 
     private static final long TABLE_SIZE = 100_000;
     private static final long STRIPE_SIZE = TABLE_SIZE / 10;
-
-    private static final AtomicInteger SETUP_COUNTER = new AtomicInteger(0);
 
     private QueryScope originalScope;
     private File dataDirectory;
@@ -164,13 +153,20 @@ public class TestChunkedRegionedOperations {
             ColumnDefinition.ofDouble("D"),
             ColumnDefinition.ofBoolean("Bl"),
             ColumnDefinition.ofString("Sym"),
-            ColumnDefinition.ofString("Str").withVarSizeString(),
+            ColumnDefinition.ofString("Str"),
             ColumnDefinition.ofTime("DT"),
             ColumnDefinition.fromGenericType("SymS", StringSet.class),
             ColumnDefinition.fromGenericType("Ser", SimpleSerializable.class),
             ColumnDefinition.fromGenericType("Ext", SimpleExternalizable.class),
-            ColumnDefinition.ofFixedWidthCodec("Fix", BigInteger.class, BigIntegerCodec.class.getName(), "4", new BigIntegerCodec(4).expectedObjectWidth()),
-            ColumnDefinition.ofVariableWidthCodec("Var", BigInteger.class, BigIntegerCodec.class.getName()));
+            ColumnDefinition.fromGenericType("Fix", BigInteger.class),
+            ColumnDefinition.fromGenericType("Var", BigInteger.class)
+        );
+        final ParquetInstructions parquetInstructions = new ParquetInstructions.Builder()
+                .addColumnCodec("Fix", BigIntegerCodec.class.getName(), "4")
+                .addColumnCodec("Var", BigIntegerCodec.class.getName())
+                .useDictionary("Sym", true)
+                .setMaximumDictionaryKeys(100) // Force "Str" to use non-dictionary encoding
+                .build();
 
         final Table inputData = ((QueryTable)TableTools.emptyTable(TABLE_SIZE)
                 .update(
@@ -228,36 +224,26 @@ public class TestChunkedRegionedOperations {
 
         final TableDefinition partitionedMissingDataDefinition = new TableDefinition(inputData.view("PC", "II").getDefinition());
 
-        final String namespace = "TestNamespace";
-        final String name = "TestTable";
-        final TableKey tableKey = new TableLookupKey.Immutable(namespace, name, TableType.STANDALONE_SPLAYED);
-
-        final List<TableLocationMetadataIndex.TableLocationSnapshot> snapshots = new ArrayList<>();
+        final String tableName = "TestTable";
 
         final TableMap partitionedInputData = inputData.byExternal("PC");
-        TableManagementTools.writeParquetTables(
+        ParquetTools.writeParquetTables(
                 partitionedInputData.values().toArray(Table.ZERO_LENGTH_TABLE_ARRAY),
-                partitionedDataDefinition,
-                CompressionCodecName.SNAPPY,
+                partitionedDataDefinition.getWritable(),
+                parquetInstructions,
                 Arrays.stream(partitionedInputData.getKeySet())
-                        .map(pcv -> {
-                            snapshots.add(new TableLocationMetadataIndex.TableLocationSnapshot("IP", "P" + pcv, TableLocation.Format.PARQUET, STRIPE_SIZE, 0L));
-                            return new File(dataDirectory, "IP" + File.separator + "P" + pcv + File.separator + tableKey.getTableName());
-                        })
+                        .map(pcv -> new File(dataDirectory, "IP" + File.separator + "P" + pcv + File.separator + tableName + File.separator + PARQUET_FILE_NAME))
                         .toArray(File[]::new),
                 CollectionUtil.ZERO_LENGTH_STRING_ARRAY
         );
 
         final TableMap partitionedInputMissingData = inputMissingData.view("PC", "II").byExternal("PC");
-        TableManagementTools.writeParquetTables(
+        ParquetTools.writeParquetTables(
                 partitionedInputMissingData.values().toArray(Table.ZERO_LENGTH_TABLE_ARRAY),
-                partitionedMissingDataDefinition,
-                CompressionCodecName.SNAPPY,
+                partitionedMissingDataDefinition.getWritable(),
+                parquetInstructions,
                 Arrays.stream(partitionedInputMissingData.getKeySet())
-                        .map(pcv -> {
-                            snapshots.add(new TableLocationMetadataIndex.TableLocationSnapshot("IP", "P" + pcv, TableLocation.Format.PARQUET, STRIPE_SIZE, 0L));
-                            return new File(dataDirectory, "IP" + File.separator + "P" + pcv + File.separator + tableKey.getTableName());
-                        })
+                        .map(pcv -> new File(dataDirectory, "IP" + File.separator + "P" + pcv + File.separator + tableName + File.separator + PARQUET_FILE_NAME))
                         .toArray(File[]::new),
                 CollectionUtil.ZERO_LENGTH_STRING_ARRAY
         );
@@ -271,21 +257,10 @@ public class TestChunkedRegionedOperations {
                         "DT_R = nanos(DT)"
                 );
 
-        actual = new NestedPartitionedDiskBackedTable(
-                partitionedDataDefinition,
-                RegionedTableComponentFactoryImpl.INSTANCE,
-                new ReadOnlyLocalTableLocationProvider(
-                        tableKey,
-                        ((SETUP_COUNTER.getAndIncrement() & 1) == 0
-                                ? new IndexedLocalTableLocationScanner(dataDirectory, new TableLocationMetadataIndex(snapshots.toArray(new TableLocationMetadataIndex.TableLocationSnapshot[0])))
-                                : new NestedPartitionedLocalTableLocationScanner(dataDirectory)
-                        ),
-                        false,
-                        TableDataRefreshService.Null.INSTANCE,
-                        ParquetInstructions.EMPTY
-                ),
-                null,
-                Collections.emptySet()
+        actual = ParquetTools.readPartitionedTable(
+                DeephavenNestedPartitionLayout.forParquet(dataDirectory, tableName, "PC", null),
+                ParquetInstructions.EMPTY,
+                partitionedDataDefinition
         ).updateView(
                 new ReinterpretedColumn<>("Bl", Boolean.class, "Bl_R", byte.class),
                 new ReinterpretedColumn<>("DT", DBDateTime.class, "DT_R", long.class)
@@ -323,7 +298,6 @@ public class TestChunkedRegionedOperations {
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testEqual() {
         assertTableEquals(expected, actual);
     }
@@ -421,56 +395,66 @@ public class TestChunkedRegionedOperations {
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testFullTableFullChunks() {
         assertChunkWiseEquals(expected, actual, expected.intSize());
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testFullTableNormalChunks() {
         assertChunkWiseEquals(expected, actual, 4096);
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testFullTableSmallChunks() {
         assertChunkWiseEquals(expected, actual, 8);
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testHalfDenseTableFullChunks() {
         assertChunkWiseEquals(expected.where("(ii / 100) % 2 == 0"), actual.where("(ii / 100) % 2 == 0"), expected.intSize());
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testHalfDenseTableNormalChunks() {
         assertChunkWiseEquals(expected.where("(ii / 100) % 2 == 0"), actual.where("(ii / 100) % 2 == 0"), 4096);
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testHalfDenseTableSmallChunks() {
         assertChunkWiseEquals(expected.where("(ii / 100) % 2 == 0"), actual.where("(ii / 100) % 2 == 0"), 8);
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testSparseTableFullChunks() {
         assertChunkWiseEquals(expected.where("ii % 2 == 0"), actual.where("ii % 2 == 0"), expected.intSize());
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testSparseTableNormalChunks() {
         assertChunkWiseEquals(expected.where("ii % 2 == 0"), actual.where("ii % 2 == 0"), 4096);
     }
 
     @Test
-    @Category(OutOfBandTest.class)
     public void testSparseTableSmallChunks() {
         assertChunkWiseEquals(expected.where("ii % 2 == 0"), actual.where("ii % 2 == 0"), 8);
+    }
+
+    @Test
+    public void testEqualSymbols() {
+        // TODO (https://github.com/deephaven/deephaven-core/issues/949): Uncomment this once we write encoding stats
+//        //noinspection unchecked
+//        final SymbolTableSource<String> symbolTableSource = (SymbolTableSource<String>) actual.getColumnSource("Sym");
+//
+//        assertTrue(symbolTableSource.hasSymbolTable(actual.getIndex()));
+//        final Table symbolTable = symbolTableSource.getStaticSymbolTable(actual.getIndex(), false);
+//
+//        assertTableEquals(expected.view("PC", "Sym").where("Sym != null").firstBy("PC", "Sym").dropColumns("PC"), symbolTable.view("Sym = Symbol").where("Sym != null"));
+//
+//        final Table joined = actual
+//                .updateView(new ReinterpretedColumn<>("Sym", String.class, "SymId", long.class))
+//                .where("SymId != NULL_LONG") // Symbol tables don't explicitly map the null ID
+//                .exactJoin(symbolTable, "SymId=" + SymbolTableSource.ID_COLUMN_NAME, "DictionarySym=" + SymbolTableSource.SYMBOL_COLUMN_NAME);
+//        final Table joinedBad = joined.where("Sym != DictionarySym");
+//        TestCase.assertTrue(joinedBad.isEmpty());
     }
 }

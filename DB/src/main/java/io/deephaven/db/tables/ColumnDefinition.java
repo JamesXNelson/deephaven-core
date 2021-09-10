@@ -5,15 +5,40 @@
 package io.deephaven.db.tables;
 
 import io.deephaven.base.Copyable;
+import io.deephaven.base.formatters.EnumFormatter;
 import io.deephaven.base.log.LogOutput;
 import io.deephaven.base.log.LogOutputAppendable;
-import io.deephaven.base.string.EncodingInfo;
-import io.deephaven.base.formatters.EnumFormatter;
 import io.deephaven.datastructures.util.HashCodeUtil;
-import io.deephaven.db.tables.dbarrays.*;
+import io.deephaven.db.tables.dbarrays.DbArray;
+import io.deephaven.db.tables.dbarrays.DbArrayBase;
+import io.deephaven.db.tables.dbarrays.DbBooleanArray;
+import io.deephaven.db.tables.dbarrays.DbByteArray;
+import io.deephaven.db.tables.dbarrays.DbCharArray;
+import io.deephaven.db.tables.dbarrays.DbDoubleArray;
+import io.deephaven.db.tables.dbarrays.DbFloatArray;
+import io.deephaven.db.tables.dbarrays.DbIntArray;
+import io.deephaven.db.tables.dbarrays.DbLongArray;
+import io.deephaven.db.tables.dbarrays.DbShortArray;
 import io.deephaven.db.tables.utils.DBDateTime;
-import io.deephaven.db.v2.sources.chunk.util.SimpleTypeMap;
-import io.deephaven.util.codec.ObjectCodec;
+import io.deephaven.qst.column.header.ColumnHeader;
+import io.deephaven.qst.type.ArrayType;
+import io.deephaven.qst.type.BooleanType;
+import io.deephaven.qst.type.ByteType;
+import io.deephaven.qst.type.CharType;
+import io.deephaven.qst.type.CustomType;
+import io.deephaven.qst.type.DbGenericArrayType;
+import io.deephaven.qst.type.DbPrimitiveArrayType;
+import io.deephaven.qst.type.DoubleType;
+import io.deephaven.qst.type.FloatType;
+import io.deephaven.qst.type.GenericType;
+import io.deephaven.qst.type.InstantType;
+import io.deephaven.qst.type.IntType;
+import io.deephaven.qst.type.LongType;
+import io.deephaven.qst.type.NativeArrayType;
+import io.deephaven.qst.type.PrimitiveType;
+import io.deephaven.qst.type.ShortType;
+import io.deephaven.qst.type.StringType;
+import io.deephaven.qst.type.Type;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -21,7 +46,8 @@ import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
-import java.util.*;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Column definition for all Deephaven columns.
@@ -36,13 +62,6 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
     public static final int COLUMNTYPE_GROUPING=2;
     public static final int COLUMNTYPE_PARTITIONING=4;
     public static final int COLUMNTYPE_VIRTUAL=8;
-
-    public static final int ENCODING_ISO_8859_1=1;
-    public static final int ENCODING_UTF_8=2;
-    public static final int ENCODING_US_ASCII=4;
-    public static final int ENCODING_UTF_16=8;
-    public static final int ENCODING_UTF_16BE=16;
-    public static final int ENCODING_UTF_16LE=32;
 
     public static ColumnDefinition<Boolean> ofBoolean(@NotNull final String name) {
         return new ColumnDefinition<>(name, Boolean.class);
@@ -84,51 +103,26 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         return new ColumnDefinition<>(name, DBDateTime.class);
     }
 
-    public static <T> ColumnDefinition<T> ofVariableWidthCodec(
-            @NotNull final String name, @NotNull final Class<T> dataType,
-            @Nullable final String codecName) {
-        return ofVariableWidthCodec(name, dataType, null, codecName, null);
+    public static ColumnDefinition<?> of(String name, Type<?> type) {
+        return type.walk(new Adapter(name)).out();
     }
 
-    public static <T> ColumnDefinition<T> ofVariableWidthCodec(
-            @NotNull final String name, @NotNull final Class<T> dataType, @Nullable final Class<?> componentType,
-            @Nullable final String codecName) {
-        return ofVariableWidthCodec(name, dataType, componentType, codecName, null);
+    public static ColumnDefinition<?> of(String name, PrimitiveType<?> type) {
+        final Adapter adapter = new Adapter(name);
+        type.walk((PrimitiveType.Visitor) adapter);
+        return adapter.out();
     }
 
-    public static <T> ColumnDefinition<T> ofVariableWidthCodec(
-            @NotNull final String name, @NotNull final Class<T> dataType, @Nullable final Class<?> componentType,
-            @Nullable final String codecName, @Nullable final String codecArgs) {
-        Objects.requireNonNull(name);
-        Objects.requireNonNull(dataType);
-        Objects.requireNonNull(codecName);
-        final ColumnDefinition<T> cd = new ColumnDefinition<>(name, dataType);
-        maybeSetComponentType(cd, dataType, componentType);
-        cd.setObjectCodecClass(codecName);
-        cd.setObjectCodecArguments(codecArgs);
-        return cd;
+    public static ColumnDefinition<?> of(String name, GenericType<?> type) {
+        final Adapter adapter = new Adapter(name);
+        type.walk((GenericType.Visitor) adapter);
+        return adapter.out();
     }
 
-    public static <T> ColumnDefinition<T> ofFixedWidthCodec(
-            @NotNull final String name, @NotNull final Class<T> dataType,
-            @Nullable final String codecName, @Nullable final String codecArguments, final int width) {
-        return ofFixedWidthCodec(name, dataType, null, codecName, codecArguments, width);
-    }
-
-    public static <T> ColumnDefinition<T> ofFixedWidthCodec(
-            @NotNull final String name, @NotNull final Class<T> dataType, @Nullable final Class<?> componentType,
-            @Nullable final String codecName, @Nullable final String codecArguments, final int width) {
-        Objects.requireNonNull(name);
-        Objects.requireNonNull(dataType);
-        Objects.requireNonNull(codecName);
-        final ColumnDefinition<T> cd = new ColumnDefinition<>(name, dataType);
-        maybeSetComponentType(cd, dataType, componentType);
-        cd.setObjectCodecClass(codecName);
-        if (codecArguments != null) {
-            cd.setObjectCodecArguments(codecArguments);
-        }
-        cd.setObjectWidth(width);
-        return cd;
+    public static <T extends DbArrayBase> ColumnDefinition<T> ofDbArray(@NotNull final String name, @NotNull final Class<T> dbArrayType) {
+        ColumnDefinition<T> columnDefinition = new ColumnDefinition<>(name, dbArrayType);
+        columnDefinition.setComponentType(baseComponentTypeForDbArray(dbArrayType));
+        return columnDefinition;
     }
 
     public static <T> ColumnDefinition<T> fromGenericType(@NotNull final String name, @NotNull final Class<T> dataType) {
@@ -142,13 +136,6 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         maybeSetComponentType(cd, dataType, componentType);
         return cd;
     }
-
-    /**
-     * {@link DbArrayBase} class for each type.
-     * Note that {@link DbBooleanArray} is deprecated, superseded by {@link DbArray}.
-     */
-    private static final SimpleTypeMap<Class<? extends DbArrayBase>> COMPONENT_TYPE_TO_DBARRAY_TYPE = SimpleTypeMap.create(
-            DbArray.class, DbCharArray.class, DbByteArray.class, DbShortArray.class, DbIntArray.class, DbLongArray.class, DbFloatArray.class, DbDoubleArray.class, DbArray.class);
 
     /**
      * Base component type class for each {@link DbArrayBase} type.
@@ -221,9 +208,11 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
             //noinspection unchecked
             final Class<?> dbArrayComponentType = baseComponentTypeForDbArray((Class<? extends DbArrayBase>) dataType);
             if (inputComponentType == null) {
-                if (DbArray.class.isAssignableFrom(dataType)) {
-                    throw new IllegalArgumentException("Missing required component type for DbArray data type " + dataType);
-                }
+                /* TODO (https://github.com/deephaven/deephaven-core/issues/817): Allow formula results returning DbArray to know component type
+                 * if (DbArray.class.isAssignableFrom(dataType)) {
+                 *     throw new IllegalArgumentException("Missing required component type for DbArray data type " + dataType);
+                 * }
+                 */
                 return dbArrayComponentType;
             }
             if (!dbArrayComponentType.isAssignableFrom(inputComponentType)) {
@@ -251,6 +240,115 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         return cd;
     }
 
+    public static ColumnDefinition<?> from(ColumnHeader<?> header) {
+        return header.componentType().walk(new Adapter(header.name())).out();
+    }
+
+    private static class Adapter implements Type.Visitor, PrimitiveType.Visitor, GenericType.Visitor {
+
+        private final String name;
+
+        private ColumnDefinition<?> out;
+
+        public Adapter(String name) {
+            this.name = Objects.requireNonNull(name);
+        }
+
+        public ColumnDefinition<?> out() {
+            return Objects.requireNonNull(out);
+        }
+
+        @Override
+        public void visit(PrimitiveType<?> primitiveType) {
+            primitiveType.walk((PrimitiveType.Visitor) this);
+        }
+
+        @Override
+        public void visit(GenericType<?> genericType) {
+            genericType.walk((GenericType.Visitor) this);
+        }
+
+        @Override
+        public void visit(BooleanType booleanType) {
+            out = ofBoolean(name);
+        }
+
+        @Override
+        public void visit(ByteType byteType) {
+            out = ofByte(name);
+        }
+
+        @Override
+        public void visit(CharType charType) {
+            out = ofChar(name);
+        }
+
+        @Override
+        public void visit(ShortType shortType) {
+            out = ofShort(name);
+        }
+
+        @Override
+        public void visit(IntType intType) {
+            out = ofInt(name);
+        }
+
+        @Override
+        public void visit(LongType longType) {
+            out = ofLong(name);
+        }
+
+        @Override
+        public void visit(FloatType floatType) {
+            out = ofFloat(name);
+        }
+
+        @Override
+        public void visit(DoubleType doubleType) {
+            out = ofDouble(name);
+        }
+
+        @Override
+        public void visit(StringType stringType) {
+            out = ofString(name);
+        }
+
+        @Override
+        public void visit(InstantType instantType) {
+            out = ofTime(name);
+        }
+
+        @Override
+        public void visit(ArrayType<?, ?> arrayType) {
+            arrayType.walk(new ArrayType.Visitor() {
+                @Override
+                public void visit(NativeArrayType<?, ?> nativeArrayType) {
+                    ColumnDefinition<?> cd = new ColumnDefinition<>(name, nativeArrayType.clazz());
+                    cd.setComponentType(nativeArrayType.componentType().clazz());
+                    out = cd;
+                }
+
+                @Override
+                public void visit(DbPrimitiveArrayType<?, ?> dbArrayPrimitiveType) {
+                    //noinspection unchecked,rawtypes
+                    out = ofDbArray(name, (Class)dbArrayPrimitiveType.clazz());
+                }
+
+                @Override
+                public void visit(DbGenericArrayType<?, ?> dbGenericArrayType) {
+                    ColumnDefinition<DbArray> cd = new ColumnDefinition<>(name, DbArray.class);
+                    cd.setComponentType(dbGenericArrayType.componentType().clazz());
+                    out = cd;
+                }
+            });
+        }
+
+        @Override
+        public void visit(CustomType<?> customType) {
+            out = fromGenericType(name, customType.clazz());
+        }
+    }
+
     // needed for deserialization
     public ColumnDefinition() {
     }
@@ -260,14 +358,9 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
     }
 
     private ColumnDefinition(String name, Class<TYPE> dataType, int columnType) {
-        this(name, dataType, columnType, false);
-    }
-
-    private ColumnDefinition(String name, Class<TYPE> dataType, int columnType, boolean isVarSizeString) {
         this.name = Objects.requireNonNull(name);
         setDataType(Objects.requireNonNull(dataType));
         setColumnType(columnType);
-        setIsVarSizeString(isVarSizeString);
     }
 
     private ColumnDefinition(ColumnDefinition source) {
@@ -281,32 +374,27 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
     }
 
     public ColumnDefinition<TYPE> withPartitioning() {
-        ColumnDefinition clone = clone();
+        final ColumnDefinition<TYPE> clone = safeClone();
         clone.setColumnType(COLUMNTYPE_PARTITIONING);
         return clone;
     }
 
     public ColumnDefinition<TYPE> withGrouping() {
-        ColumnDefinition clone = clone();
+        final ColumnDefinition<TYPE> clone = safeClone();
         clone.setColumnType(COLUMNTYPE_GROUPING);
         return clone;
     }
 
     public ColumnDefinition<TYPE> withNormal() {
-        ColumnDefinition clone = clone();
+        final ColumnDefinition<TYPE> clone = safeClone();
         clone.setColumnType(COLUMNTYPE_NORMAL);
         return clone;
     }
 
     public <Other> ColumnDefinition<Other> withDataType(Class<Other> dataType) {
-        ColumnDefinition clone = clone();
+        final ColumnDefinition clone = safeClone();
         clone.setDataType(dataType);
-        return clone;
-    }
-
-    public ColumnDefinition<TYPE> withVarSizeString() {
-        ColumnDefinition clone = clone();
-        clone.setIsVarSizeString(true);
+        //noinspection unchecked
         return clone;
     }
 
@@ -368,113 +456,31 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         if (!dataType.equals(other.dataType)) {
             differences.add(prefix + lhs + " dataType '" + dataType + "' does not match " + rhs + " dataType '" + other.dataType + "'");
         } else {
-            if (getSymbolTableType() != other.getSymbolTableType()) {
-                differences.add(prefix + lhs + " SymbolTableType '" + getSymbolTableType() + "' does not match " + rhs + " SymbolTableType '" + other.getSymbolTableType() + "'");
-            }
             if (!Objects.equals(componentType, other.componentType)) {
                 differences.add(prefix + lhs + " componentType '" + componentType + "' does not match " + rhs + " componentType '" + other.componentType + "'");
             }
             if (columnType != other.columnType) {
                 differences.add(prefix + lhs + " columnType " + columnType + " does not match " + rhs + " columnType " + other.columnType);
             }
-            if (getEncodingInfo(encoding) != getEncodingInfo(other.encoding)) {
-                differences.add(prefix + lhs + " encoding '" + getEncodingInfo(encoding) + "' does not match " + rhs + " encoding '" + getEncodingInfo(other.encoding) + "'");
-            }
-            if (!Objects.equals(getObjectCodecClass(), other.getObjectCodecClass())) {
-                differences.add(prefix + lhs + " object codec class '" + getObjectCodecClass() + "' does not match " + rhs + " object codec class '" + other.getObjectCodecClass() + "'");
-            }
-            if (!Objects.equals(getObjectCodecArguments(), other.getObjectCodecArguments())) {
-                differences.add(prefix + lhs + " object codec arguments '" + getObjectCodecArguments() + "' does not match " + rhs + " object codec arguments '" + other.getObjectCodecArguments() + "'");
-            }
-            if (getObjectWidth() != other.getObjectWidth()) {
-                differences.add(prefix + lhs + " object width " + getObjectWidth() + " does not match " + rhs + " object width " + other.getObjectWidth());
-            }
         }
     }
 
-    public boolean equals(Object other) {
-        if(!(other instanceof ColumnDefinition)) {
+    public boolean equals(final Object other) {
+        if (!(other instanceof ColumnDefinition)) {
             return false;
         }
         final ColumnDefinition otherCD = (ColumnDefinition)other;
-        return name.equals(otherCD.name) &&
-                dataType.equals(otherCD.dataType) &&
-                getSymbolTableType() == otherCD.getSymbolTableType() &&
-                Objects.equals(componentType, otherCD.componentType) &&
-                columnType == otherCD.columnType &&
-                getEncodingInfo(encoding) == getEncodingInfo(otherCD.encoding) &&
-                Objects.equals(getObjectCodecClass(), otherCD.getObjectCodecClass()) &&
-                Objects.equals(getObjectCodecArguments(), otherCD.getObjectCodecArguments()) &&
-                getObjectWidth() == otherCD.getObjectWidth();
+        return name.equals(otherCD.name)
+                && dataType.equals(otherCD.dataType)
+                && Objects.equals(componentType, otherCD.componentType)
+                && columnType == otherCD.columnType
+                ;
     }
 
     public ColumnDefinition rename(String newName) {
         final ColumnDefinition renamed = clone();
         renamed.setName(newName);
         return renamed;
-    }
-
-    public enum SymbolTableType {
-        NONE("None"),
-        COLUMN_LOCATION("ColumnLocation");
-
-        /**
-         * Get the XML attribute value for this enum value.
-         *
-         * @return the XML attribute value for this enum value
-         */
-        public String getAttributeValue() {
-            return attributeValue;
-        }
-
-        private final String attributeValue;
-        SymbolTableType(String value) {
-            this.attributeValue = value;
-        }
-
-        /**
-         * Return the SymbolTableType with the given attribute value.
-         *
-         * @param attributeValue the attributeValue matching one of the enum attributeValues
-         * @return the SymbolTableType with the given attribute value
-         * @throws IllegalArgumentException if no match is found
-         */
-        public static SymbolTableType reverseLookup(String attributeValue) {
-            return Arrays.stream(values()).filter(v -> v.attributeValue.equals(attributeValue)).findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("No enum constant with attribute value '" + attributeValue + "'"));
-        }
-    }
-
-    public SymbolTableType getSymbolTableType() {
-        if (!CharSequence.class.isAssignableFrom(dataType) || !isDirect()) {
-            return null;
-        }
-        if (Objects.equals(isVarSizeString, Boolean.TRUE)) {
-            return SymbolTableType.NONE;
-        }
-        return SymbolTableType.COLUMN_LOCATION;
-    }
-
-    public EncodingInfo getEncodingInfo() {
-        return getEncodingInfo(encoding);
-    }
-
-    public static EncodingInfo getEncodingInfo(final int encoding) {
-        switch (encoding) {
-            case ENCODING_ISO_8859_1: return EncodingInfo.ISO_8859_1;
-            case ENCODING_UTF_8:      return EncodingInfo.UTF_8;
-            case ENCODING_US_ASCII:   return EncodingInfo.US_ASCII;
-            case ENCODING_UTF_16:     return EncodingInfo.UTF_16;
-            case ENCODING_UTF_16BE:   return EncodingInfo.UTF_16BE;
-            case ENCODING_UTF_16LE:   return EncodingInfo.UTF_16LE;
-            default:                  return EncodingInfo.ISO_8859_1; // Should be 0, or Integer.MIN_VALUE (null).
-        }
-    }
-
-    public boolean isFixedWidthObjectType() {
-        //noinspection ConstantConditions
-        assert ObjectCodec.VARIABLE_WIDTH_SENTINEL == Integer.MIN_VALUE;
-        return objectWidth != ObjectCodec.VARIABLE_WIDTH_SENTINEL;
     }
 
     private String name;
@@ -504,7 +510,7 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         this.componentType=componentType;
     }
 
-    private int columnType=Integer.MIN_VALUE;
+    private int columnType = Integer.MIN_VALUE;
     public int getColumnType() {
         return columnType;
     }
@@ -513,73 +519,22 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         this.columnType=columnType;
     }
 
-    private Boolean isVarSizeString;
-    public Boolean getIsVarSizeString() {
-        return isVarSizeString;
-    }
-
-    void setIsVarSizeString(Boolean isVarSizeString) {
-        this.isVarSizeString=isVarSizeString;
-    }
-
-    private int encoding=Integer.MIN_VALUE;
-    public int getEncoding() {
-        return encoding;
-    }
-
-    private String objectCodecClass;
-    public String getObjectCodecClass() {
-        return objectCodecClass;
-    }
-
-    void setObjectCodecClass(String objectCodecClass) {
-        this.objectCodecClass=objectCodecClass;
-    }
-
-    private String objectCodecArguments;
-    public String getObjectCodecArguments() {
-        return objectCodecArguments;
-    }
-
-    void setObjectCodecArguments(String objectCodecArguments) {
-        this.objectCodecArguments=objectCodecArguments;
-    }
-
-    private int objectWidth=Integer.MIN_VALUE;
-    public int getObjectWidth() {
-        return objectWidth;
-    }
-
-    void setObjectWidth(int objectWidth) {
-        this.objectWidth=objectWidth;
-    }
-
     @Override
     public void copyValues(ColumnDefinition x) {
         name = x.name;
         dataType = x.dataType;
         componentType = x.componentType;
         columnType = x.columnType;
-        isVarSizeString = x.isVarSizeString;
-        encoding = x.encoding;
-        objectCodecClass = x.objectCodecClass;
-        objectCodecArguments = x.objectCodecArguments;
-        objectWidth = x.objectWidth;
     }
 
     @Override
     public String toString() {
-        StringBuilder builder = new StringBuilder("ColumnDefinition : ");
+        final StringBuilder builder = new StringBuilder("ColumnDefinition : ");
 
         builder.append("name=").append(name);
         builder.append("|dataType=").append(dataType);
         builder.append("|componentType=").append(componentType);
         builder.append("|columnType=").append(columnType);
-        builder.append("|isVarSizeString=").append(isVarSizeString);
-        builder.append("|encoding=").append(encoding);
-        builder.append("|objectCodecClass=").append(objectCodecClass);
-        builder.append("|objectCodecArguments=").append(objectCodecArguments);
-        builder.append("|objectWidth=").append(objectWidth);
 
         return builder.toString();
     }
@@ -592,11 +547,6 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         logOutput.append("|dataType=").append(String.valueOf(dataType));
         logOutput.append("|componentType=").append(String.valueOf(componentType));
         logOutput.append("|columnType=").append(columnType);
-        logOutput.append("|isVarSizeString=").append(isVarSizeString);
-        logOutput.append("|encoding=").append(encoding);
-        logOutput.append("|objectCodecClass=").append(String.valueOf(objectCodecClass));
-        logOutput.append("|objectCodecArguments=").append(String.valueOf(objectCodecArguments));
-        logOutput.append("|objectWidth=").append(objectWidth);
 
         return logOutput;
     }
@@ -606,7 +556,8 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
     }
 
     @Override
-    public ColumnDefinition safeClone() {
+    public ColumnDefinition<TYPE> safeClone() {
+        //noinspection unchecked
         return clone();
     }
 
@@ -615,11 +566,6 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         dataType = (Class)in.readObject();
         componentType = (Class)in.readObject();
         columnType = in.readInt();
-        isVarSizeString = (Boolean)in.readObject();
-        encoding = in.readInt();
-        objectCodecClass = in.readUTF(); objectCodecClass = "\0".equals(objectCodecClass) ? null : objectCodecClass;
-        objectCodecArguments = in.readUTF(); objectCodecArguments = "\0".equals(objectCodecArguments) ? null : objectCodecArguments;
-        objectWidth = in.readInt();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
@@ -627,11 +573,5 @@ public class ColumnDefinition<TYPE> implements Externalizable, LogOutputAppendab
         out.writeObject(dataType);
         out.writeObject(componentType);
         out.writeInt(columnType);
-        out.writeObject(isVarSizeString);
-        out.writeInt(encoding);
-        if (objectCodecClass == null) { out.writeUTF("\0"); } else { out.writeUTF(objectCodecClass); }
-        if (objectCodecArguments == null) { out.writeUTF("\0"); } else { out.writeUTF(objectCodecArguments); }
-        out.writeInt(objectWidth);
     }
-
 }

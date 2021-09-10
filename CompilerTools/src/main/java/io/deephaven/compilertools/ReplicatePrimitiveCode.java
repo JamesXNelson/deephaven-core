@@ -426,11 +426,12 @@ public class ReplicatePrimitiveCode {
                 if (file.isDirectory() && file.getName().equals("DB")) {
                     return file.getPath();
                 }
-            } else {
-                if (file.isDirectory() && sourceClass.getName().startsWith("io.deephaven." + file.getName().toLowerCase())) {
+            } else if(sourceClass.getName().startsWith("io.deephaven.kafka.ingest")) {
+                if (file.isDirectory() && file.getName().equals("Kafka")) {
                     return file.getPath();
                 }
-                if (file.isDirectory() && sourceClass.getName().startsWith("io.deephaven." + file.getName().toLowerCase())) {
+            } else {
+                if (file.isDirectory() && sourceClass.getName().startsWith("io.deephaven." + file.getName().toLowerCase().replace('-', '_') + ".")) {
                     return file.getPath();
                 }
             }

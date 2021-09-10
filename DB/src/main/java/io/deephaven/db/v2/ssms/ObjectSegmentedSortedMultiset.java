@@ -2329,11 +2329,6 @@ public final class ObjectSegmentedSortedMultiset implements SegmentedSortedMulti
     }
 
     @Override
-    public DbArray<Object> toDbArray() {
-        return this;
-    }
-
-    @Override
     public Object getPrev(long i) {
         // TODO: Maybe needs to care about the LogicalClock
         return prevValues != null ? prevValues.get((int)i) : get(i);

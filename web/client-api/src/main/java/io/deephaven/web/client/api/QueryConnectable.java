@@ -1,11 +1,15 @@
 package io.deephaven.web.client.api;
 
+import elemental2.core.JsArray;
 import elemental2.core.JsSet;
+import elemental2.dom.CustomEventInit;
 import elemental2.dom.DomGlobal;
 import elemental2.promise.Promise;
 import io.deephaven.ide.shared.IdeSession;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.ticket_pb.Ticket;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.GetConsoleTypesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.GetConsoleTypesResponse;
 import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.StartConsoleRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb.Ticket;
 import io.deephaven.web.client.fu.CancellablePromise;
 import io.deephaven.web.client.fu.JsLog;
 import io.deephaven.web.client.fu.LazyPromise;
@@ -17,6 +21,7 @@ import io.deephaven.web.shared.fu.RemoverFn;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsProperty;
+import jsinterop.base.JsPropertyMap;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +67,9 @@ public abstract class QueryConnectable <Self extends QueryConnectable<Self>> ext
     @JsProperty(namespace = "dh.QueryInfo")
     public static final String EVENT_CONNECT = "connect";
 
+    @JsProperty(namespace = "dh.IdeConnection")
+    public static final String HACK_CONNECTION_FAILURE = "hack-connection-failure";
+
     private final List<IdeSession> sessions = new ArrayList<>();
     private final JsSet<Ticket> cancelled = new JsSet<>();
 
@@ -71,6 +79,16 @@ public abstract class QueryConnectable <Self extends QueryConnectable<Self>> ext
 
     public QueryConnectable(Supplier<Promise<ConnectToken>> authTokenPromiseSupplier) {
         this.connection = JsLazy.of(() -> new WorkerConnection(this, authTokenPromiseSupplier));
+    }
+
+    public void notifyConnectionError(ResponseStreamWrapper.Status status) {
+        CustomEventInit event = CustomEventInit.create();
+        event.setDetail(JsPropertyMap.of(
+                "status", status.getCode(),
+                "details", status.getDetails(),
+                "metadata", status.getMetadata()
+        ));
+        fireEvent(HACK_CONNECTION_FAILURE, event);
     }
 
     @Override
@@ -130,7 +148,7 @@ public abstract class QueryConnectable <Self extends QueryConnectable<Self>> ext
         LazyPromise<Ticket> promise = new LazyPromise<>();
         final ClientConfiguration config = connection.get().getConfig();
         final Ticket ticket = new Ticket();
-        ticket.setId(config.newTicket());
+        ticket.setTicket(config.newTicket());
 
         final JsRunnable closer = ()-> {
             boolean run = !cancelled.has(ticket);
@@ -165,6 +183,17 @@ public abstract class QueryConnectable <Self extends QueryConnectable<Self>> ext
             return session;
         }, closer);
     }
+
+    @JsMethod
+    public Promise<JsArray<String>> getConsoleTypes() {
+        Promise<GetConsoleTypesResponse> promise = Callbacks.grpcUnaryPromise(callback -> {
+            GetConsoleTypesRequest request = new GetConsoleTypesRequest();
+            connection.get().consoleServiceClient().getConsoleTypes(request, connection.get().metadata(), callback::apply);
+        });
+
+        return promise.then(result -> Promise.resolve(result.getConsoleTypesList()));
+    }
+
 
     public void connected() {
         if (closed) {

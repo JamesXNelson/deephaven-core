@@ -220,9 +220,10 @@ public class ChunkerCompleter implements CompletionHandler<ParsedDocument> {
                 // adjust the text edit back, stopping at the cursor.
                 if (log.isTraceEnabled()) {
                     log.trace()
-                            .append("No extendStart support yet; result:")
+                            .append("No extendStart support yet; result: ")
                             .append(result.toString())
-                            .append("\nRequested: ")
+                            .nl()
+                            .append("Requested: ")
                             .append(requested.toString())
                             .endl();
                 }
@@ -539,7 +540,8 @@ public class ChunkerCompleter implements CompletionHandler<ParsedDocument> {
                     .append(node.getClass().getCanonicalName())
                     .append(" not yet supported: ")
                     .append(node.toSource())
-                    .append("\nParent source:")
+                    .nl()
+                    .append("Parent source: ")
                     .append(parent.toSource())
                     .endl();
         }
@@ -851,6 +853,7 @@ public class ChunkerCompleter implements CompletionHandler<ParsedDocument> {
             if (Modifier.isPublic(method.getModifiers())) {
                 // TODO we'll likely want to pick between static or instance methods, based on calling scope.
                 //   IDS-1517-19
+                // TODO(deephaven-core#875): Auto-complete on instance should not suggest static methods
                 if (camelMatch(method.getName(), methodPrefix)) {
                     sorter.add(method.getName(), method);
                 }

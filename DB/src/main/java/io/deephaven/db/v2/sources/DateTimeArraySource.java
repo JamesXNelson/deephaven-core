@@ -104,17 +104,17 @@ public class DateTimeArraySource extends AbstractLongArraySource<DBDateTime> {
 
     @Override
     public void fillFromChunkByRanges(@NotNull OrderedKeys orderedKeys, Chunk<? extends Values> src) {
-        super.fillFromChunkByRanges(orderedKeys, src, DBTimeUtils::nanos);
+        super.<DBDateTime>fillFromChunkByRanges(orderedKeys, src, DBTimeUtils::nanos);
     }
 
     @Override
     void fillFromChunkByKeys(@NotNull OrderedKeys orderedKeys, Chunk<? extends Values> src) {
-        super.fillFromChunkByKeys(orderedKeys, src, DBTimeUtils::nanos);
+        super.<DBDateTime>fillFromChunkByKeys(orderedKeys, src, DBTimeUtils::nanos);
     }
 
     @Override
     public void fillFromChunkUnordered(@NotNull FillFromContext context, @NotNull Chunk<? extends Values> src, @NotNull LongChunk<Attributes.KeyIndices> keys) {
-        super.fillFromChunkUnordered(src, keys, DBTimeUtils::nanos);
+        super.<DBDateTime>fillFromChunkUnordered(src, keys, DBTimeUtils::nanos);
     }
 
     @Override
@@ -126,6 +126,11 @@ public class DateTimeArraySource extends AbstractLongArraySource<DBDateTime> {
     private class ReinterpretedAsLong extends AbstractColumnSource<Long> implements MutableColumnSourceGetDefaults.ForLong, FillUnordered, WritableSource<Long> {
         private ReinterpretedAsLong() {
             super(long.class);
+        }
+
+        @Override
+        public void startTrackingPrevValues() {
+            DateTimeArraySource.this.startTrackingPrevValues();
         }
 
         @Override
@@ -198,8 +203,9 @@ public class DateTimeArraySource extends AbstractLongArraySource<DBDateTime> {
             DateTimeArraySource.super.set(destKey, sourceColumn.getLong(sourceKey));
         }
 
-        public void ensureCapacity(long capacity) {
-            DateTimeArraySource.this.ensureCapacity(capacity);
+        @Override
+        public void ensureCapacity(long capacity, boolean nullFill) {
+            DateTimeArraySource.this.ensureCapacity(capacity, nullFill);
         }
 
         @Override

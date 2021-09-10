@@ -28,6 +28,7 @@ import io.deephaven.db.v2.select.*;
 import io.deephaven.db.v2.sources.AbstractColumnSource;
 import io.deephaven.db.v2.sources.ColumnSource;
 import io.deephaven.db.v2.sources.LogicalClock;
+import io.deephaven.db.v2.utils.BarrageMessage;
 import io.deephaven.db.v2.utils.ColumnHolder;
 import io.deephaven.db.v2.utils.Index;
 import io.deephaven.db.v2.utils.IndexShiftData;
@@ -691,7 +692,6 @@ public class QueryTableTest extends QueryTableTestBase {
         }
     }
 
-    @Category(OutOfBandTest.class)
     public void testStringContainsFilter() {
         Function<String, SelectFilter> filter = ConditionFilter::createConditionFilter;
         final Random random = new Random(0);
@@ -771,7 +771,6 @@ public class QueryTableTest extends QueryTableTestBase {
         assertTableEquals(TableTools.newTable(intCol("IV", 1, 2, 4, 6)), geq1.dropColumns("LV"));
     }
 
-    @Category(OutOfBandTest.class)
     public void testDoubleRangeFilter() {
         Function<String, SelectFilter> filter = ConditionFilter::createConditionFilter;
         final Random random = new Random(0);
@@ -805,7 +804,6 @@ public class QueryTableTest extends QueryTableTestBase {
         }
     }
 
-    @Category(OutOfBandTest.class)
     public void testDateTimeRangeFilter() {
         Function<String, SelectFilter> filter = ConditionFilter::createConditionFilter;
         final Random random = new Random(0);
@@ -1069,27 +1067,33 @@ public class QueryTableTest extends QueryTableTestBase {
     public void testSnapshot() {
         final QueryTable right = testRefreshingTable(i(10, 25, 30), c("A", 3, 1, 2), c("B", "c", "a", "b"));
         final QueryTable left1 = testRefreshingTable(c("T", 1));
-        show(left1.snapshot(right));
-        assertEquals("", diff(left1.snapshot(right), testRefreshingTable(intCol("A"), stringCol("B"), intCol("T")), 10));
+        final Table expected = right.naturalJoin(left1, "", "T");
+        TableTools.showWithIndex(expected);
+        final Table actual = left1.snapshot(right);
+        assertTableEquals(expected, actual);
+
+        assertTableEquals(right.head(0).updateView("T=1"), left1.snapshot(right, false));
 
         final QueryTable left2 = testRefreshingTable(c("T",1,2));
         final Table snapshot = left2.snapshot(right);
-        show(snapshot);
-        assertEquals("", diff(snapshot, testRefreshingTable(intCol("A"), stringCol("B"), intCol("T")), 10));
+
+        final Table expect1 = newTable(c("A", 3, 1, 2), c("B", "c", "a", "b"), c("T", 2, 2, 2));
+        assertTableEquals(expect1, snapshot);
 
         LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
             addToTable(right, i(20, 40), c("A", 30, 50), c("B", "aa", "bc"));
             right.notifyListeners(i(20, 40), i(), i());
         });
         show(snapshot, 50);
-        assertEquals("", diff(snapshot, testRefreshingTable(intCol("A"), stringCol("B"), intCol("T")), 10));
+        assertTableEquals(expect1, snapshot);
 
         LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
             addToTable(left2, i(3), c("T", 5));
             left2.notifyListeners(i(3), i(), i());
         });
         show(snapshot, 50);
-        assertEquals("", diff(snapshot, testRefreshingTable(c("A", 3, 30, 1, 2, 50), c("B", "c", "aa", "a", "b", "bc"), c("T", 5, 5, 5, 5, 5)), 10));
+        final Table expect2 = newTable(c("A", 3, 30, 1, 2, 50), c("B", "c", "aa", "a", "b", "bc"), c("T", 5, 5, 5, 5, 5));
+        assertTableEquals(expect2, snapshot);
 
         LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
             removeRows(right, i(10, 20, 30));
@@ -1097,10 +1101,7 @@ public class QueryTableTest extends QueryTableTestBase {
             right.notifyListeners(i(), i(10, 20, 30), i(25));
         });
         show(snapshot, 50);
-        assertEquals("", diff(snapshot, testRefreshingTable(
-                c("A", 3, 30, 1, 2, 50),
-                c("B", "c", "aa", "a", "b", "bc"),
-                c("T", 5, 5, 5, 5, 5)), 10));
+        assertTableEquals(expect2, snapshot);
 
         LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
             addToTable(left2, i(4, 5), c("T", 7, 8));
@@ -1108,7 +1109,8 @@ public class QueryTableTest extends QueryTableTestBase {
         });
         show(right, 50);
         show(snapshot, 50);
-        assertEquals("", diff(snapshot, testRefreshingTable(c("A", 11, 50), c("B", "A", "bc"), c("T", 8, 8)), 10));
+        final Table expect3 = newTable(c("A", 11, 50), c("B", "A", "bc"), c("T", 8, 8));
+        assertTableEquals(expect3, snapshot);
     }
 
     public void testSnapshotHistorical() {
@@ -2144,7 +2146,17 @@ public class QueryTableTest extends QueryTableTestBase {
         assertEquals(Arrays.asList(1, 1, 1, 1, 1, 1, 1, 1, 1), Arrays.asList(t1.getColumn("X").get(0, 9)));
         assertEquals(Arrays.asList(4, 4, 4, 5, 5, 5, 6, 6, 6), Arrays.asList(t1.getColumn("Z").get(0, 9)));
         assertEquals(Arrays.asList("a","b","c","a","b","c","a","b","c"),Arrays.asList(t1.getColumn("Y").get(0,9)));
+    }
 
+    public void testUngroupConstructSnapshotOfBoxedNull() {
+        final Table t = testRefreshingTable(i(0)).update("X = new Integer[]{null, 2, 3}", "Z = new Integer[]{4, 5, null}");
+        final Table ungrouped = t.ungroup();
+
+        try (final BarrageMessage snap = ConstructSnapshot.constructBackplaneSnapshot(this, (BaseTable)ungrouped)) {
+            assertEquals(snap.rowsAdded, i(0, 1, 2));
+            assertEquals(snap.addColumnData[0].data.asIntChunk().get(0), io.deephaven.util.QueryConstants.NULL_INT);
+            assertEquals(snap.addColumnData[1].data.asIntChunk().get(2), io.deephaven.util.QueryConstants.NULL_INT);
+        }
     }
 
     public void testUngroupableColumnSources() {
@@ -2227,7 +2239,7 @@ public class QueryTableTest extends QueryTableTestBase {
             // This is too big, we should fail
             LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
                 final long bigIndex = 1L << 55;
-                addToTable(table, i(bigIndex), intCol("X", 3), new ColumnHolder("Y", String[].class, (String[]) new String[]{"f"}));
+                addToTable(table, i(bigIndex), intCol("X", 3), new ColumnHolder<>("Y", String[].class, String.class, false, new String[]{"f"}));
                 table.notifyListeners(i(bigIndex), i(), i());
             });
             showWithIndex(t1);
@@ -2270,7 +2282,7 @@ public class QueryTableTest extends QueryTableTestBase {
 
             // This is too big, we should fail
             LiveTableMonitor.DEFAULT.runWithinUnitTestCycle(() -> {
-                addToTable(table, i(9), c("X", 3), new ColumnHolder("Y", String[].class, new String[]{"f", "g", "h", "i", "j", "k"}));
+                addToTable(table, i(9), c("X", 3), new ColumnHolder<>("Y", String[].class, String.class, false, new String[]{"f", "g", "h", "i", "j", "k"}));
                 table.notifyListeners(i(9), i(), i());
             });
             showWithIndex(t1);
@@ -2294,7 +2306,6 @@ public class QueryTableTest extends QueryTableTestBase {
         }
     }
 
-    @Category(OutOfBandTest.class)
     public void testUngroupIncremental() throws ParseException {
         testUngroupIncremental(100, false);
         testUngroupIncremental(100, true);
@@ -2679,9 +2690,11 @@ public class QueryTableTest extends QueryTableTestBase {
         QueryScope.addParam("booleans", booleans);
 
         final Table source = emptyTable(10).updateView("Sentinel=i", "Symbol=syms[i % syms.length]", "Timestamp=baseTime+dateOffset[i]*3600L*1000000000L", "Truthiness=booleans[i]").by("Symbol").ungroup();
+        testDirectory.mkdirs();
+        final File dest = new File(testDirectory, "Table.parquet");
         try {
-            TableManagementTools.writeTable(source, definition, testDirectory, TableManagementTools.StorageFormat.Parquet);
-            final Table table = TableManagementTools.readTable(testDirectory);
+            ParquetTools.writeTable(source, dest, definition);
+            final Table table = ParquetTools.readTable(dest);
             testFunction.accept(table);
             table.close();
         } finally {

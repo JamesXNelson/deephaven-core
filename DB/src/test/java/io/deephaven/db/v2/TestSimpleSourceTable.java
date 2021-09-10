@@ -10,10 +10,8 @@ import io.deephaven.db.tables.ColumnDefinition;
 import io.deephaven.db.tables.Table;
 import io.deephaven.db.tables.TableDefinition;
 import io.deephaven.db.tables.live.LiveTableMonitor;
-import io.deephaven.db.v2.locations.TableDataException;
-import io.deephaven.db.v2.locations.TableLocation;
-import io.deephaven.db.v2.locations.TableLocationKey;
-import io.deephaven.db.v2.locations.TableLocationProvider;
+import io.deephaven.db.v2.locations.*;
+import io.deephaven.db.v2.locations.impl.StandaloneTableLocationKey;
 import io.deephaven.db.v2.sources.DeferredGroupingColumnSource;
 import io.deephaven.db.v2.utils.Index;
 import org.junit.After;
@@ -78,20 +76,23 @@ public class TestSimpleSourceTable extends LiveTableTestCase {
         locationProvider = mock(TableLocationProvider.class);
         tableLocation = mock(TableLocation.class);
         checking(new Expectations() {{
-            allowing(locationProvider).getTableLocations();
-            will(returnValue(Collections.singleton(tableLocation)));
+            allowing(locationProvider).getTableLocationKeys();
+            will(returnValue(Collections.singleton(StandaloneTableLocationKey.getInstance())));
+            allowing(locationProvider).getTableLocation(with(StandaloneTableLocationKey.getInstance()));
+            will(returnValue(tableLocation));
             allowing(tableLocation).supportsSubscriptions();
             will(returnValue(true));
-            allowing(tableLocation).getInternalPartition();
-            will(returnValue(TableLocationKey.NULL_PARTITION));
-            allowing(tableLocation).getColumnPartition();
-            will(returnValue(TableLocationKey.NULL_PARTITION));
+            allowing(tableLocation).getKey();
+            will(returnValue(StandaloneTableLocationKey.getInstance()));
             allowing(locationProvider).supportsSubscriptions();
             will(returnValue(true));
         }});
 
         checking(new Expectations() {{
-            oneOf(componentFactory).createColumnSourceManager(with(false), with(equal(TABLE_DEFINITION.getColumns())));
+            oneOf(componentFactory).createColumnSourceManager(
+                    with(false),
+                    with(ColumnToCodecMappings.EMPTY),
+                    with(equal(TABLE_DEFINITION.getColumns())));
             will(returnValue(columnSourceManager));
         }});
 
@@ -184,7 +185,10 @@ public class TestSimpleSourceTable extends LiveTableTestCase {
         // Setup the table
         final int[] includedColumnIndices1 = new int[]{1, 2, 3};
         checking(new Expectations() {{
-            oneOf(componentFactory).createColumnSourceManager(with(false), with(equal(getIncludedColumnDefs(includedColumnIndices1))));
+            oneOf(componentFactory).createColumnSourceManager(
+                    with(false),
+                    with(ColumnToCodecMappings.EMPTY),
+                    with(equal(getIncludedColumnDefs(includedColumnIndices1))));
             will(returnValue(columnSourceManager));
         }});
         final Table dropColumnsResult1 = SUT.dropColumns(getExcludedColumnNames(SUT.getDefinition(), includedColumnIndices1));
@@ -209,7 +213,10 @@ public class TestSimpleSourceTable extends LiveTableTestCase {
         // Setup the table
         final int[] includedColumnIndices2 = new int[]{2, 3};
         checking(new Expectations() {{
-            oneOf(componentFactory).createColumnSourceManager(with(false), with(equal(getIncludedColumnDefs(includedColumnIndices2))));
+            oneOf(componentFactory).createColumnSourceManager(
+                    with(false),
+                    with(ColumnToCodecMappings.EMPTY),
+                    with(equal(getIncludedColumnDefs(includedColumnIndices2))));
             will(returnValue(columnSourceManager));
         }});
         final Table dropColumnsResult2 = dropColumnsResult1.dropColumns(getExcludedColumnNames(dropColumnsResult1.getDefinition(), includedColumnIndices2));
@@ -244,7 +251,10 @@ public class TestSimpleSourceTable extends LiveTableTestCase {
         // Setup the table
         final int[] includedColumnIndices3 = new int[]{2};
         checking(new Expectations() {{
-            oneOf(componentFactory).createColumnSourceManager(with(false), with(equal(getIncludedColumnDefs(includedColumnIndices3))));
+            oneOf(componentFactory).createColumnSourceManager(
+                    with(false),
+                    with(ColumnToCodecMappings.EMPTY),
+                    with(equal(getIncludedColumnDefs(includedColumnIndices3))));
             will(returnValue(columnSourceManager));
         }});
         final Table viewResult1 = dropColumnsResult2.view(getIncludedColumnNames(includedColumnIndices3));

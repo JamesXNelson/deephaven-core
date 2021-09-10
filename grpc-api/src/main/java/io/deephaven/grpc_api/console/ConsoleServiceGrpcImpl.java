@@ -1,7 +1,12 @@
+/*
+ * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
+ */
+
 package io.deephaven.grpc_api.console;
 
 import com.google.rpc.Code;
 import io.deephaven.configuration.Configuration;
+import io.deephaven.db.plot.FigureWidget;
 import io.deephaven.db.tables.Table;
 import io.deephaven.db.tables.live.LiveTableMonitor;
 import io.deephaven.db.tables.remote.preview.ColumnPreviewManager;
@@ -9,8 +14,11 @@ import io.deephaven.db.util.ExportedObjectType;
 import io.deephaven.db.util.NoLanguageDeephavenSession;
 import io.deephaven.db.util.ScriptSession;
 import io.deephaven.db.util.VariableProvider;
+import io.deephaven.figures.FigureWidgetTranslator;
 import io.deephaven.grpc_api.session.SessionService;
 import io.deephaven.grpc_api.session.SessionState;
+import io.deephaven.grpc_api.session.SessionState.ExportBuilder;
+import io.deephaven.grpc_api.session.TicketRouter;
 import io.deephaven.grpc_api.table.TableServiceGrpcImpl;
 import io.deephaven.grpc_api.util.GrpcUtil;
 import io.deephaven.internal.log.LoggerFactory;
@@ -47,30 +55,35 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
 
     public static final String WORKER_CONSOLE_TYPE = Configuration.getInstance().getStringWithDefault("io.deephaven.console.type", "python");
 
-    private volatile ScriptSession globalSession;
-
     private final Map<String, Provider<ScriptSession>> scriptTypes;
+    private final TicketRouter ticketRouter;
     private final SessionService sessionService;
     private final LogBuffer logBuffer;
     private final LiveTableMonitor liveTableMonitor;
 
+    private final GlobalSessionProvider globalSessionProvider;
+
     @Inject
-    public ConsoleServiceGrpcImpl(final Map<String, Provider<ScriptSession>> scriptTypes, final SessionService sessionService, final LogBuffer logBuffer, final LiveTableMonitor liveTableMonitor) {
+    public ConsoleServiceGrpcImpl(final Map<String, Provider<ScriptSession>> scriptTypes,
+                                  final TicketRouter ticketRouter,
+                                  final SessionService sessionService,
+                                  final LogBuffer logBuffer,
+                                  final LiveTableMonitor liveTableMonitor,
+                                  final GlobalSessionProvider globalSessionProvider) {
         this.scriptTypes = scriptTypes;
+        this.ticketRouter = ticketRouter;
         this.sessionService = sessionService;
         this.logBuffer = logBuffer;
         this.liveTableMonitor = liveTableMonitor;
+        this.globalSessionProvider = globalSessionProvider;
 
         if (!scriptTypes.containsKey(WORKER_CONSOLE_TYPE)) {
             throw new IllegalArgumentException("Console type not found: " + WORKER_CONSOLE_TYPE);
         }
     }
 
-    public synchronized void initializeGlobalScriptSession() {
-        if (globalSession != null) {
-            throw new IllegalStateException("global session already initialized");
-        }
-        globalSession = scriptTypes.get(WORKER_CONSOLE_TYPE).get();
+    public void initializeGlobalScriptSession() {
+        globalSessionProvider.initializeGlobalScriptSession(scriptTypes.get(WORKER_CONSOLE_TYPE).get());
     }
 
     @Override
@@ -104,11 +117,11 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
                     .submit(() -> {
                         final ScriptSession scriptSession;
                         if (sessionType.equals(WORKER_CONSOLE_TYPE)) {
-                            scriptSession = globalSession;
+                            scriptSession = globalSessionProvider.getGlobalSession();
                         } else {
                             scriptSession = new NoLanguageDeephavenSession(sessionType);
-                            log.error().append("Session type '" + sessionType + "' is disabled. " +
-                                    "Use the More Actions icon to swap to session type '" + WORKER_CONSOLE_TYPE + "'.").endl();
+                            log.error().append("Session type '" + sessionType + "' is disabled." +
+                                    "Use the session type '" + WORKER_CONSOLE_TYPE + "' instead.").endl();
                         }
 
                         safelyExecute(() -> {
@@ -140,7 +153,7 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
         GrpcUtil.rpcWrapper(log, responseObserver, () -> {
             final SessionState session = sessionService.getCurrentSession();
 
-            SessionState.ExportObject<ScriptSession> exportedConsole = session.getExport(request.getConsoleId());
+            SessionState.ExportObject<ScriptSession> exportedConsole = ticketRouter.resolve(session, request.getConsoleId());
             session.nonExport()
                     .requiresSerialQueue()
                     .require(exportedConsole)
@@ -177,14 +190,29 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
     public void bindTableToVariable(BindTableToVariableRequest request, StreamObserver<BindTableToVariableResponse> responseObserver) {
         GrpcUtil.rpcWrapper(log, responseObserver, () -> {
             final SessionState session = sessionService.getCurrentSession();
+            final SessionState.ExportObject<Table> exportedTable = ticketRouter.resolve(session, request.getTableId());
+            final SessionState.ExportObject<ScriptSession> exportedConsole;
 
-            SessionState.ExportObject<ScriptSession> exportedConsole = session.getExport(request.getConsoleId());
-            SessionState.ExportObject<Table> exportedTable = session.getExport(request.getTableId());
-            session.nonExport()
-                    .require(exportedConsole, exportedTable)
-                    .submit(() -> {
-                        exportedConsole.get().setVariable(request.getVariableName(), exportedTable.get());
-                    });
+            ExportBuilder<?> exportBuilder = session.nonExport()
+                    .requiresSerialQueue()
+                    .onError(responseObserver::onError);
+
+            if (request.hasConsoleId()) {
+                exportedConsole = ticketRouter.resolve(session, request.getConsoleId());
+                exportBuilder.require(exportedTable, exportedConsole);
+            } else {
+                exportedConsole = null;
+                exportBuilder.require(exportedTable);
+            }
+
+            exportBuilder.submit(() -> {
+                ScriptSession scriptSession = exportedConsole != null ? exportedConsole.get() : globalSessionProvider.getGlobalSession();
+                Table table = exportedTable.get();
+                scriptSession.setVariable(request.getVariableName(), table);
+                scriptSession.manage(table);
+                responseObserver.onNext(BindTableToVariableResponse.getDefaultInstance());
+                responseObserver.onCompleted();
+            });
         });
     }
 
@@ -194,7 +222,7 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
         GrpcUtil.rpcWrapper(log, responseObserver, () -> {
             final SessionState session = sessionService.getCurrentSession();
 
-            SessionState.ExportObject<ScriptSession> exportedConsole = session.getExport(request.getConsoleId());
+            SessionState.ExportObject<ScriptSession> exportedConsole = ticketRouter.resolve(session, request.getConsoleId());
 
             session.newExport(request.getTableId())
                     .require(exportedConsole)
@@ -203,13 +231,13 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
                         ScriptSession scriptSession = exportedConsole.get();
                         String tableName = request.getTableName();
                         if (!scriptSession.hasVariableName(tableName)) {
-                            throw GrpcUtil.statusRuntimeException(Code.INVALID_ARGUMENT, "No value exists with name " + tableName);
+                            throw GrpcUtil.statusRuntimeException(Code.NOT_FOUND, "No value exists with name " + tableName);
                         }
 
                         // Explicit typecheck to catch any wrong-type-ness right away
                         Object result = scriptSession.unwrapObject(scriptSession.getVariable(tableName));
                         if (!(result instanceof Table)) {
-                            throw GrpcUtil.statusRuntimeException(Code.INVALID_ARGUMENT, "Value bound to name " + tableName + " is not a Table");
+                            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "Value bound to name " + tableName + " is not a Table");
                         }
 
                         // Apply preview columns TODO core#107 move to table service
@@ -325,6 +353,38 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
                         responseObserver.onCompleted();
                     });
                 });
+        });
+    }
+
+    @Override
+    public void fetchFigure(FetchFigureRequest request, StreamObserver<FetchFigureResponse> responseObserver) {
+        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
+            final SessionState session = sessionService.getCurrentSession();
+
+            SessionState.ExportObject<ScriptSession> exportedConsole = session.getExport(request.getConsoleId());
+
+            session.nonExport()
+                    .require(exportedConsole)
+                    .onError(responseObserver::onError)
+                    .submit(() -> {
+                        ScriptSession scriptSession = exportedConsole.get();
+
+                        String figureName = request.getFigureName();
+                        if (!scriptSession.hasVariableName(figureName)) {
+                            throw GrpcUtil.statusRuntimeException(Code.NOT_FOUND, "No value exists with name " + figureName);
+                        }
+
+                        Object result = scriptSession.unwrapObject(scriptSession.getVariable(figureName));
+                        if (!(result instanceof FigureWidget)) {
+                            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "Value bound to name " + figureName + " is not a FigureWidget");
+                        }
+                        FigureWidget widget = (FigureWidget) result;
+
+                        FigureDescriptor translated = FigureWidgetTranslator.translate(widget, session);
+
+                        responseObserver.onNext(FetchFigureResponse.newBuilder().setFigureDescriptor(translated).build());
+                        responseObserver.onCompleted();
+                    });
         });
     }
 

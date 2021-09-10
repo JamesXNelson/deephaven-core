@@ -4,10 +4,13 @@ import elemental2.core.JsMap;
 import elemental2.core.JsObject;
 import elemental2.core.JsSet;
 import elemental2.promise.Promise;
+import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.message_generated.org.apache.arrow.flatbuf.Message;
+import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.message_generated.org.apache.arrow.flatbuf.MessageHeader;
+import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Field;
+import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.KeyValue;
+import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Schema;
 import io.deephaven.javascript.proto.dhinternal.browserheaders.BrowserHeaders;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.schema_generated.io.deephaven.barrage.flatbuf.Field;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.schema_generated.io.deephaven.barrage.flatbuf.KeyValue;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.schema_generated.io.deephaven.barrage.flatbuf.Schema;
+import io.deephaven.javascript.proto.dhinternal.flatbuffers.ByteBuffer;
 import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ExportedTableCreationResponse;
 import io.deephaven.web.client.api.*;
 import io.deephaven.web.client.api.batch.TableConfig;
@@ -985,7 +988,17 @@ public final class ClientTableState extends TableConfig {
         handle.setState(TableTicket.State.EXPORTED);
         handle.setConnected(true);
 
-        Schema schema = Schema.getRootAsSchema(new io.deephaven.javascript.proto.dhinternal.flatbuffers.ByteBuffer(def.getSchemaHeader_asU8()));
+        // we conform to flight's schema representation of:
+        //  - IPC_CONTINUATION_TOKEN (4-byte int of -1)
+        //  - message size (4-byte int)
+        //  - a Message wrapping the schema
+        ByteBuffer bb = new ByteBuffer(def.getSchemaHeader_asU8());
+        bb.setPosition(bb.position() + 8);
+        Message headerMessage = Message.getRootAsMessage(bb);
+
+        assert headerMessage.headerType() == MessageHeader.Schema;
+        Schema schema = headerMessage.header(new Schema());
+
         ColumnDefinition[] cols = new ColumnDefinition[(int)schema.fieldsLength()];
         for (int i = 0; i < schema.fieldsLength(); i++) {
             cols[i] = new ColumnDefinition();
@@ -998,9 +1011,9 @@ public final class ClientTableState extends TableConfig {
             cols[i].setName(f.name().asString());
             cols[i].setColumnIndex(i);
             cols[i].setType(fieldMetadata.get("deephaven:type"));
-            cols[i].setStyleColumn(fieldMetadata.get("deephaven:isStyle").equals("true"));
-            cols[i].setFormatColumn(fieldMetadata.get("deephaven:isDateFormat").equals("true") || fieldMetadata.get("deephaven:isNumberFormat").equals("true"));
-            cols[i].setForRow(fieldMetadata.get("deephaven:isRowStyle").equals("true"));
+            cols[i].setStyleColumn("true".equals(fieldMetadata.get("deephaven:isStyle")));
+            cols[i].setFormatColumn("true".equals(fieldMetadata.get("deephaven:isDateFormat")) || "true".equals(fieldMetadata.get("deephaven:isNumberFormat")));
+            cols[i].setForRow("true".equals(fieldMetadata.get("deephaven:isRowStyle")));
 
             String formatColumnName = fieldMetadata.get("deephaven:dateFormatColumn");
             if (formatColumnName == null) {

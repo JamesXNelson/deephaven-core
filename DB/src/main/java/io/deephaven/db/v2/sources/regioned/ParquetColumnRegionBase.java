@@ -1,9 +1,8 @@
 package io.deephaven.db.v2.sources.regioned;
 
 import io.deephaven.base.verify.Require;
-import javax.annotation.OverridingMethodsMustInvokeSuper;
 import io.deephaven.db.v2.locations.parquet.ColumnChunkPageStore;
-import io.deephaven.db.v2.sources.chunk.Attributes;
+import io.deephaven.db.v2.sources.chunk.Attributes.Any;
 import io.deephaven.db.v2.sources.chunk.Chunk;
 import io.deephaven.db.v2.sources.chunk.SharedContext;
 import io.deephaven.db.v2.sources.chunk.WritableChunk;
@@ -11,12 +10,16 @@ import io.deephaven.db.v2.sources.chunk.page.ChunkPage;
 import io.deephaven.db.v2.utils.OrderedKeys;
 import org.jetbrains.annotations.NotNull;
 
-public class ParquetColumnRegionBase<ATTR extends Attributes.Any> implements ParquetColumnRegion<ATTR> {
+import javax.annotation.OverridingMethodsMustInvokeSuper;
 
-    @NotNull
-    private final ColumnChunkPageStore<ATTR> columnChunkPageStore;
+public abstract class ParquetColumnRegionBase<ATTR extends Any>
+        extends GenericColumnRegionBase<ATTR>
+        implements ParquetColumnRegion<ATTR> {
 
-    ParquetColumnRegionBase(@NotNull ColumnChunkPageStore<ATTR> columnChunkPageStore) {
+    final ColumnChunkPageStore<ATTR> columnChunkPageStore;
+
+    ParquetColumnRegionBase(final long pageMask, @NotNull final ColumnChunkPageStore<ATTR> columnChunkPageStore) {
+        super(pageMask);
         this.columnChunkPageStore = Require.neqNull(columnChunkPageStore, "columnChunkPageStore");
 
         // We are making the following assumptions, so these basic functions are inlined rather than virtual calls.
@@ -25,38 +28,27 @@ public class ParquetColumnRegionBase<ATTR extends Attributes.Any> implements Par
     }
 
     @Override
-    final public long length() {
-        return columnChunkPageStore.length();
-    }
-
-    @Override
-    @NotNull
-    final public Class<?> getNativeType() {
-        return columnChunkPageStore.getNativeType();
-    }
-
-    @Override
-    public Chunk<? extends ATTR> getChunk(@NotNull GetContext context, @NotNull OrderedKeys orderedKeys) {
+    public final Chunk<? extends ATTR> getChunk(@NotNull final GetContext context, @NotNull final OrderedKeys orderedKeys) {
         return columnChunkPageStore.getChunk(context, orderedKeys);
     }
 
     @Override
-    public Chunk<? extends ATTR> getChunk(@NotNull GetContext context, long firstKey, long lastKey) {
+    public final Chunk<? extends ATTR> getChunk(@NotNull final GetContext context, final long firstKey, final long lastKey) {
         return columnChunkPageStore.getChunk(context, firstKey, lastKey);
     }
 
     @Override
-    public void fillChunk(@NotNull FillContext context, @NotNull WritableChunk<? super ATTR> destination, @NotNull OrderedKeys orderedKeys) {
+    public final void fillChunk(@NotNull final FillContext context, @NotNull final WritableChunk<? super ATTR> destination, @NotNull final OrderedKeys orderedKeys) {
         columnChunkPageStore.fillChunk(context, destination, orderedKeys);
     }
 
     @Override
-    public void fillChunkAppend(@NotNull FillContext context, @NotNull WritableChunk<? super ATTR> destination, @NotNull OrderedKeys.Iterator orderedKeysIterator) {
+    public final void fillChunkAppend(@NotNull final FillContext context, @NotNull final WritableChunk<? super ATTR> destination, @NotNull final OrderedKeys.Iterator orderedKeysIterator) {
         columnChunkPageStore.fillChunkAppend(context, destination, orderedKeysIterator);
     }
 
     @Override
-    final public ChunkPage<ATTR> getChunkPageContaining(long elementIndex) {
+    public final ChunkPage<ATTR> getChunkPageContaining(final long elementIndex) {
         return columnChunkPageStore.getPageContaining(elementIndex);
     }
 
@@ -64,19 +56,16 @@ public class ParquetColumnRegionBase<ATTR extends Attributes.Any> implements Par
     @OverridingMethodsMustInvokeSuper
     public void releaseCachedResources() {
         ParquetColumnRegion.super.releaseCachedResources();
-        columnChunkPageStore.close();
+        columnChunkPageStore.releaseCachedResources();
     }
 
     @Override
-    public FillContext makeFillContext(int chunkCapacity, SharedContext sharedContext) {
+    public final FillContext makeFillContext(final int chunkCapacity, final SharedContext sharedContext) {
         return columnChunkPageStore.makeFillContext(chunkCapacity, sharedContext);
     }
 
     @Override
-    public GetContext makeGetContext(int chunkCapacity, SharedContext sharedContext) {
+    public final GetContext makeGetContext(final int chunkCapacity, final SharedContext sharedContext) {
         return columnChunkPageStore.makeGetContext(chunkCapacity, sharedContext);
     }
-
 }
-
-

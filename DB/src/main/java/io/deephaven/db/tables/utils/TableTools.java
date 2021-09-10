@@ -4,6 +4,7 @@
 
 package io.deephaven.db.tables.utils;
 
+import io.deephaven.base.ClassUtil;
 import io.deephaven.base.Pair;
 import io.deephaven.base.verify.Require;
 import io.deephaven.datastructures.util.CollectionUtil;
@@ -526,62 +527,6 @@ public class TableTools {
     /**
      * Writes a DB table out as a CSV.
      *
-     * @param sourcePath path to the table files to be exported
-     * @param destPath   path to the CSV file to be written
-     * @param columns    a list of columns to include in the export
-     * @throws IOException if source files cannot be read or target file cannot be written
-     */
-    @ScriptApi
-    public static void writeCsv(String sourcePath, String destPath, String... columns) throws IOException {
-        writeCsv(sourcePath, destPath, false, columns);
-    }
-
-    /**
-     * Writes a DB table out as a CSV.
-     *
-     * @param sourcePath path to the table files to be exported
-     * @param destPath   path to the CSV file to be written
-     * @param columns    a list of columns to include in the export
-     * @throws IOException if source files cannot be read or target file cannot be written
-     */
-    @ScriptApi
-    public static void writeCsv(String sourcePath, String destPath, boolean nullsAsEmpty, String... columns) throws IOException {
-        writeCsv(sourcePath, destPath, DBTimeZone.TZ_DEFAULT, nullsAsEmpty, columns);
-    }
-
-    /**
-     * Writes a DB table out as a CSV.
-     *
-     * @param sourcePath path to the table files to be exported
-     * @param destPath   path to the CSV file to be written
-     * @param timeZone   a DBTimeZone constant relative to which DBDateTime data should be adjusted
-     * @param columns    a list of columns to include in the export
-     * @throws IOException if source files cannot be read or target file cannot be written
-     */
-    @ScriptApi
-    public static void writeCsv(String sourcePath, String destPath, DBTimeZone timeZone, String... columns) throws IOException {
-        writeCsv(sourcePath, destPath, timeZone, false, columns);
-    }
-
-    /**
-     * Writes a DB table out as a CSV.
-     *
-     * @param sourcePath   path to the table files to be exported
-     * @param destPath     path to the CSV file to be written
-     * @param timeZone     a DBTimeZone constant relative to which DBDateTime data should be adjusted
-     * @param nullsAsEmpty if nulls should be written as blank instead of '(null)'
-     * @param columns      a list of columns to include in the export
-     * @throws IOException if source files cannot be read or target file cannot be written
-     */
-    @ScriptApi
-    public static void writeCsv(String sourcePath, String destPath, DBTimeZone timeZone, boolean nullsAsEmpty, String... columns) throws IOException {
-        Table source = TableManagementTools.readTable(sourcePath);
-        writeCsv(source, destPath, false, timeZone, nullsAsEmpty, columns);
-    }
-
-    /**
-     * Writes a DB table out as a CSV.
-     *
      * @param source     a Deephaven table object to be exported
      * @param destPath   path to the CSV file to be written
      * @param compressed whether to compress (bz2) the file being written
@@ -990,7 +935,8 @@ public class TableTools {
         } else if (data.getClass().getComponentType() == Float.class) {
             return floatCol(name, ArrayUtils.getUnboxedArray((Float[]) data));
         }
-        return new ColumnHolder(name, false, data);
+        //noinspection unchecked
+        return new ColumnHolder(name, data.getClass().getComponentType(), data.getClass().getComponentType().getComponentType(), false, data);
     }
 
     /**
@@ -1001,7 +947,7 @@ public class TableTools {
      * @return a Deephaven ColumnHolder object
      */
     public static ColumnHolder stringCol(String name, String... data) {
-        return new ColumnHolder(name, false, data);
+        return new ColumnHolder(name, String.class, null, false, data);
     }
 
     /**
@@ -1012,7 +958,7 @@ public class TableTools {
      * @return a Deephaven ColumnHolder object
      */
     public static ColumnHolder dateTimeCol(String name, DBDateTime... data) {
-        return new ColumnHolder(name, false, data);
+        return new ColumnHolder(name, DBDateTime.class, null, false, data);
     }
 
     /**
@@ -1152,7 +1098,7 @@ public class TableTools {
         Map<String, ColumnSource> columns = new LinkedHashMap<>();
         for (ColumnDefinition columnDefinition : definition.getColumnList()) {
             //noinspection unchecked
-            columns.put(columnDefinition.getName(), ArrayBackedColumnSource.getMemoryColumnSource(0, columnDefinition.getDataType()));
+            columns.put(columnDefinition.getName(), ArrayBackedColumnSource.getMemoryColumnSource(0, columnDefinition.getDataType(), columnDefinition.getComponentType()));
         }
         return new QueryTable(definition, Index.FACTORY.getEmptyIndex(), columns);
     }
@@ -1335,6 +1281,20 @@ public class TableTools {
      */
     public static Table timeTable(String startTime, long periodNanos, ReplayerInterface replayer) {
         return timeTable(DBTimeUtils.convertDateTime(startTime), periodNanos, replayer);
+    }
+
+    /**
+     * Creates a table that adds a new row on a regular interval.
+     *
+     * @param timeProvider    the time provider
+     * @param startTime   start time for adding new rows
+     * @param periodNanos time interval between new row additions in nanoseconds.
+     * @return time table
+     */
+    public static Table timeTable(TimeProvider timeProvider, DBDateTime startTime, long periodNanos) {
+        final TimeTable timeTable = new TimeTable(timeProvider, startTime, periodNanos);
+        LiveTableMonitor.DEFAULT.addTable(timeTable);
+        return timeTable;
     }
 
     // endregion time tables
@@ -1659,5 +1619,40 @@ public class TableTools {
             case Boolean:
                 throw new UnsupportedOperationException();
         }
+    }
+
+    public static String nullTypeAsString(final Class<?> dataType) {
+        if (dataType == int.class) {
+            return "NULL_INT";
+        }
+        if (dataType == long.class) {
+            return "NULL_LONG";
+        }
+        if (dataType == char.class) {
+            return "NULL_CHAR";
+        }
+        if (dataType == double.class) {
+            return "NULL_DOUBLE";
+        }
+        if (dataType == float.class) {
+            return "NULL_FLOAT";
+        }
+        if (dataType == short.class) {
+            return "NULL_SHORT";
+        }
+        if (dataType == byte.class) {
+            return "NULL_BYTE";
+        }
+        return "(" + dataType.getName() + ")" + " null";
+    }
+
+    public static Class<?> typeFromName(final String dataTypeStr) {
+        final Class<?> dataType;
+        try {
+            dataType = ClassUtil.lookupClass(dataTypeStr);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalArgumentException("Type " + dataTypeStr + " not known", e);
+        }
+        return dataType;
     }
 }

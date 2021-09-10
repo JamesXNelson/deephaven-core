@@ -3,7 +3,7 @@ package io.deephaven.db.v2.by;
 import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.db.tables.Table;
 import io.deephaven.db.tables.select.MatchPair;
-import io.deephaven.db.tables.utils.DBNameValidator;
+import io.deephaven.db.tables.utils.NameValidator;
 import io.deephaven.db.v2.BaseTable;
 import io.deephaven.db.v2.sources.chunk.Attributes.Values;
 import io.deephaven.db.v2.sources.chunk.ChunkSource;
@@ -23,7 +23,7 @@ public class FirstOrLastByAggregationFactory implements AggregationContextFactor
 
     public FirstOrLastByAggregationFactory(boolean isFirst, String exposeRedirection) {
         this.isFirst = isFirst;
-        this.exposeRedirection = exposeRedirection == null ? null : DBNameValidator.validateColumnName(exposeRedirection);
+        this.exposeRedirection = exposeRedirection == null ? null : NameValidator.validateColumnName(exposeRedirection);
     }
 
     @Override
@@ -45,7 +45,9 @@ public class FirstOrLastByAggregationFactory implements AggregationContextFactor
         final MatchPair[] matchPairs = table.getDefinition().getColumnNames().stream().filter(col -> !groupBySet.contains(col)).map(col -> new MatchPair(col, col)).toArray(MatchPair[]::new);
 
         if (table.isLive()) {
-            if (((BaseTable) table).isAddOnly()) {
+            if (((BaseTable) table).isStream()) {
+                operator[0] = isFirst ? new StreamFirstChunkedOperator(matchPairs, table) : new StreamLastChunkedOperator(matchPairs, table);
+            } else if (((BaseTable) table).isAddOnly()) {
                 operator[0] = new AddOnlyFirstOrLastChunkedOperator(isFirst, matchPairs, table, exposeRedirection);
             } else {
                 operator[0] = new FirstOrLastChunkedOperator(isFirst, matchPairs, table, exposeRedirection);

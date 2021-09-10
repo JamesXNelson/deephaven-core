@@ -1,5 +1,6 @@
 package io.deephaven.db.v2;
 
+import io.deephaven.api.Selectable;
 import io.deephaven.base.Function;
 import io.deephaven.base.verify.Require;
 import io.deephaven.datastructures.util.CollectionUtil;
@@ -1229,7 +1230,7 @@ public class QueryTableTreeTest extends QueryTableTestBase {
             }
         }
 
-        final Table rollupClean = getDiffableTable(rollup).view(viewCols);
+        final Table rollupClean = getDiffableTable(rollup).view(Selectable.from(viewCols));
 
         final String diff = TableTools.diff(fullBy, rollupClean, 10, EnumSet.of(TableDiff.DiffItems.DoublesExact));
 
@@ -1586,7 +1587,6 @@ public class QueryTableTreeTest extends QueryTableTestBase {
         return new io.deephaven.datastructures.util.SmartKey(id, pos.substring(0, liof));
     }
 
-    @Category(OutOfBandTest.class)
     public void testOrderTreeTable() {
         final Random random = new Random(0);
 

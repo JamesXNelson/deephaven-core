@@ -9,22 +9,36 @@ import io.deephaven.db.v2.sources.chunk.CharChunk;
 import io.deephaven.db.v2.sources.chunk.Chunk;
 import io.deephaven.db.v2.sources.chunk.WritableChunk;
 import io.deephaven.libs.primitives.CharacterPrimitives;
+import io.deephaven.qst.type.CharType;
+import io.deephaven.qst.type.DbPrimitiveArrayType;
 import io.deephaven.util.annotations.FinalDefault;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
 
-public interface DbCharArray extends DbArrayBase {
+public interface DbCharArray extends DbArrayBase<DbCharArray> {
 
     long serialVersionUID = -1373264425081841175L;
 
+    static DbPrimitiveArrayType<DbCharArray, Character> type() {
+        return DbPrimitiveArrayType.of(DbCharArray.class, CharType.instance());
+    }
+
     char get(long i);
+
+    @Override
     DbCharArray subArray(long fromIndex, long toIndex);
+
+    @Override
     DbCharArray subArrayByPositions(long [] positions);
+
+    @Override
     char[] toArray();
+
+    @Override
     long size();
-    DbArray toDbArray();
+
     char getPrev(long i);
 
     @Override
@@ -33,7 +47,14 @@ public interface DbCharArray extends DbArrayBase {
         return char.class;
     }
 
+    @Override
+    @FinalDefault
+    default String toString(final int prefixLength) {
+        return toString(this, prefixLength);
+    }
+
     /** Return a version of this DbArrayBase that is flattened out to only reference memory.  */
+    @Override
     DbCharArray getDirect();
 
     @Override
@@ -57,15 +78,16 @@ public interface DbCharArray extends DbArrayBase {
     /**
      * Helper method for implementing {@link Object#toString()}.
      *
-     * @param array The DbCharArray to convert to a String
+     * @param array       The DbCharArray to convert to a String
+     * @param prefixLength The maximum prefix of the array to convert
      * @return The String representation of array
      */
-    static String toString(@NotNull final DbCharArray array) {
+    static String toString(@NotNull final DbCharArray array, final int prefixLength) {
         if (array.isEmpty()) {
             return "[]";
         }
         final StringBuilder builder = new StringBuilder("[");
-        final int displaySize = (int) Math.min(array.size(), 10);
+        final int displaySize = (int) Math.min(array.size(), prefixLength);
         builder.append(primitiveCharValToString(array.get(0)));
         for (int ei = 1; ei < displaySize; ++ei) {
             builder.append(',').append(primitiveCharValToString(array.get(ei)));
@@ -137,7 +159,7 @@ public interface DbCharArray extends DbArrayBase {
 
         @Override
         public final String toString() {
-            return DbCharArray.toString(this);
+            return DbCharArray.toString(this, 10);
         }
 
         @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")

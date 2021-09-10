@@ -65,7 +65,6 @@ public class TestSort extends BaseArrayTestCase {
         }
     }
 
-    @Category(OutOfBandTest.class)
     public void testSortMulti() {
         for (int ncols = 1; ncols <= 4; ++ncols)
         {
@@ -375,7 +374,7 @@ public class TestSort extends BaseArrayTestCase {
             {
                 column[ii] = makeEntry();
             }
-            return ArrayBackedColumnSource.getMemoryColumnSource(column);
+            return ArrayBackedColumnSource.getMemoryColumnSourceUntyped(column);
         }
     }
 
@@ -572,7 +571,7 @@ public class TestSort extends BaseArrayTestCase {
         {
             sentinels[jj] = jj + 1;
         }
-        columns.put("Sentinel", ArrayBackedColumnSource.getMemoryColumnSource(sentinels));
+        columns.put("Sentinel", ArrayBackedColumnSource.getMemoryColumnSourceUntyped(sentinels));
 
         return new QueryTable(Index.FACTORY.getIndexByRange(0, size - 1), columns);
     }
@@ -614,7 +613,7 @@ public class TestSort extends BaseArrayTestCase {
             {
                 data[jj] = dataGenerator.makeEntry();
             }
-            columnHolders[ii] = new ColumnHolder("Column" +ii, grouped, data);
+            columnHolders[ii] = new ColumnHolder<>("Column" +ii, String.class, null, grouped, data);
             boxedData[ii] = data;
         }
 
@@ -623,7 +622,7 @@ public class TestSort extends BaseArrayTestCase {
         {
             sequence[jj] = jj + 1;
         }
-        columnHolders[ncols] = new ColumnHolder("Sentinel", false, sequence);
+        columnHolders[ncols] = new ColumnHolder<>("Sentinel", Integer.class, null, false, sequence);
 
         Table source = TableTools.newTable(columnHolders);
 
