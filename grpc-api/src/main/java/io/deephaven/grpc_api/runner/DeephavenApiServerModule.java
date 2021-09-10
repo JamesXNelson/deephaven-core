@@ -52,9 +52,9 @@ public class DeephavenApiServerModule {
     @Provides
     @Singleton
     static Server buildServer(
-            final @Named("grpc.port") int port,
-            final Set<BindableService> services,
-            final Set<ServerInterceptor> interceptors) {
+        final @Named("grpc.port") int port,
+        final Set<BindableService> services,
+        final Set<ServerInterceptor> interceptors) {
 
         final ServerBuilder<?> builder = ServerBuilder.forPort(port);
         String chainLoc = System.getenv("DH_TLS_CHAIN");
@@ -87,12 +87,14 @@ public class DeephavenApiServerModule {
         return new HealthStatusManager();
     }
 
-    @Provides @ElementsIntoSet
+    @Provides
+    @ElementsIntoSet
     static Set<BindableService> primeServices(HealthStatusManager healthStatusManager) {
         return Collections.singleton(healthStatusManager.getHealthService());
     }
 
-    @Provides @ElementsIntoSet
+    @Provides
+    @ElementsIntoSet
     static Set<ServerInterceptor> primeInterceptors() {
         return Collections.emptySet();
     }
@@ -101,17 +103,18 @@ public class DeephavenApiServerModule {
     @Singleton
     public static Scheduler provideScheduler(final @Named("scheduler.poolSize") int poolSize) {
         final ThreadFactory concurrentThreadFactory = new ThreadFactory("Scheduler-Concurrent");
-        final ScheduledExecutorService concurrentExecutor = new ScheduledThreadPoolExecutor(poolSize, concurrentThreadFactory) {
-            @Override
-            protected void afterExecute(final Runnable task, final Throwable error) {
-                super.afterExecute(task, error);
-                DeephavenApiServerModule.afterExecute("concurrentExecutor", task, error);
-            }
-        };
+        final ScheduledExecutorService concurrentExecutor =
+            new ScheduledThreadPoolExecutor(poolSize, concurrentThreadFactory) {
+                @Override
+                protected void afterExecute(final Runnable task, final Throwable error) {
+                    super.afterExecute(task, error);
+                    DeephavenApiServerModule.afterExecute("concurrentExecutor", task, error);
+                }
+            };
 
         final ThreadFactory serialThreadFactory = new ThreadFactory("Scheduler-Serial");
         final ExecutorService serialExecutor = new ThreadPoolExecutor(1, 1, 0L,
-                TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), serialThreadFactory) {
+            TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), serialThreadFactory) {
 
             @Override
             protected void afterExecute(final Runnable task, final Throwable error) {
@@ -124,17 +127,19 @@ public class DeephavenApiServerModule {
     }
 
     private static void report(final String executorType, final Throwable error) {
-        ProcessEnvironment.getGlobalFatalErrorReporter().report("Exception while processing " + executorType + " task", error);
+        ProcessEnvironment.getGlobalFatalErrorReporter()
+            .report("Exception while processing " + executorType + " task", error);
     }
 
-    private static void afterExecute(final String executorType, final Runnable task, final Throwable error) {
+    private static void afterExecute(final String executorType, final Runnable task,
+        final Throwable error) {
         if (error != null) {
             report(executorType, error);
         } else if (task instanceof Future<?>) {
             try {
                 ((Future<?>) task).get();
             } catch (final InterruptedException ignored) {
-                //noinspection ResultOfMethodCallIgnored
+                // noinspection ResultOfMethodCallIgnored
                 Thread.interrupted();
             } catch (final CancellationException ignored) {
             } catch (final ExecutionException e) {
