@@ -12,8 +12,8 @@ public class FilterPrinterTest {
         // simple double -> string and back again
         assertSameValue(1.5);
 
-        // make sure that if a "double" is passed instead of a more correct integer type, we still
-        // print something that matches
+        // make sure that if a "double" is passed instead of a more correct integer type, we still print something that
+        // matches
         assertSameValue(2.0);
 
         // other cases, make sure we match plain java expectations
@@ -23,8 +23,7 @@ public class FilterPrinterTest {
                 Math.E, Math.PI,
                 Double.MAX_VALUE, Double.MIN_VALUE, Double.MIN_NORMAL,
                 Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NaN}) {
-            // ensure the rendered value turns back into a double and equals _exactly_ the original
-            // value
+            // ensure the rendered value turns back into a double and equals _exactly_ the original value
             assertSameValue(val);
         }
 
@@ -48,10 +47,9 @@ public class FilterPrinterTest {
         rotateAndAssert(longBits);
     }
 
-
     private static void assertSameValue(double expected) {
         Literal literal = lit(expected);
-        String str = FilterPrinter.printNoEscape(literal);
+        String str = removeQuotes(FilterPrinter.printNoEscape(literal));
 
         // test magic values that make sense in java, but Double.parseDouble won't accept directly
         if (Double.isNaN(expected)) {
@@ -66,19 +64,25 @@ public class FilterPrinterTest {
                 assertEquals(Double.toString(expected), str);
             } else {
                 assertEquals("Provided value should have no decimal component " + expected, 0,
-                    expected - (long) expected, 0);
+                        expected - (long) expected, 0);
                 assertEquals(Long.toString((long) expected), str);
             }
         }
     }
 
     private static void assertSameValue(long expected) {
-        assertTrue("Must be in the range that a double value can represent",
-            Math.abs(expected) < (1L << 53));
+        assertTrue("Must be in the range that a double value can represent", Math.abs(expected) < (1L << 53));
         Literal literal = lit(expected);
-        String str = FilterPrinter.printNoEscape(literal);
+        String str = removeQuotes(FilterPrinter.printNoEscape(literal));
 
         assertEquals(Long.toString(expected), str);
+    }
+
+    private static String removeQuotes(String quotedStr) {
+        assertTrue(quotedStr.length() >= 2);
+        assertEquals(quotedStr.charAt(0), '"');
+        assertEquals(quotedStr.charAt(quotedStr.length() - 1), '"');
+        return quotedStr.substring(1, quotedStr.length() - 1);
     }
 
     private static void rotateAndAssert(long longBits) {

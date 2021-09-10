@@ -35,7 +35,7 @@ Additionally, the following methods have been imported into the main deephaven n
        convertToJavaHashSet, convertToJavaHashMap
 
 * from TableManipulation import ColumnRenderersBuilder, DistinctFormatter,
-       DownsampledWhereFilter, LayoutHintBuilder,
+       DownsampledWhereFilter, DynamicTableWriter, LayoutHintBuilder,  
        SmartKey, SortPair, TotalsTableBuilder, WindowCheck
 
 For ease of namespace population in a python console, consider::
@@ -57,8 +57,8 @@ __all__ = [
     "convertToJavaArray", "convertToJavaList", "convertToJavaArrayList", "convertToJavaHashSet",
     "convertToJavaHashMap",  # from conversion_utils
 
-    'ColumnRenderersBuilder', 'DistinctFormatter', 'DownsampledWhereFilter', 'LayoutHintBuilder',
-    'SmartKey', 'SortPair', 'TotalsTableBuilder', 'WindowCheck',  # from TableManipulation
+    'ColumnRenderersBuilder', 'DistinctFormatter', 'DownsampledWhereFilter', 'DynamicTableWriter', 
+    'LayoutHintBuilder', 'SmartKey', 'SortPair', 'TotalsTableBuilder', 'WindowCheck',  # from TableManipulation
 
     "cals", "caf", "dbtu", "figw", "mavg", "npy", "plt", "pt", "ttools", "tloggers"  # subpackages with abbreviated names
 ]
@@ -83,12 +83,14 @@ from .conversion_utils import convertToJavaArray, convertToJavaList, convertToJa
 from . import Calendars as cals, \
     ComboAggregateFactory as caf, \
     DBTimeUtils as dbtu, \
+    KafkaTools as kt, \
     MovingAverages as mavg, \
     npy, \
     Plot as plt, \
     ParquetTools as pt, \
     TableTools as ttools, \
-    TableLoggers as tloggers
+    TableLoggers as tloggers, \
+    Types as dh
 
 from .Plot import figure_wrapper as figw
 
@@ -104,6 +106,8 @@ def initialize():
     cals._defineSymbols()
     caf._defineSymbols()
     dbtu._defineSymbols()
+    dh._defineSymbols()
+    kt._defineSymbols()
     mavg._defineSymbols()
     plt._defineSymbols()
     figw._defineSymbols()
@@ -115,10 +119,10 @@ def initialize():
 
     import deephaven.TableManipulation
     deephaven.TableManipulation._defineSymbols()
-    global ColumnRenderersBuilder, DistinctFormatter, DownsampledWhereFilter, LayoutHintBuilder, \
-        SmartKey, SortPair, TotalsTableBuilder
+    global ColumnRenderersBuilder, DistinctFormatter, DownsampledWhereFilter, DynamicTableWriter, \
+        LayoutHintBuilder, SmartKey, SortPair, TotalsTableBuilder
     from deephaven.TableManipulation import ColumnRenderersBuilder, DistinctFormatter, \
-        DownsampledWhereFilter, LayoutHintBuilder, SmartKey, SortPair, \
+        DownsampledWhereFilter, DynamicTableWriter, LayoutHintBuilder, SmartKey, SortPair, \
         TotalsTableBuilder
 
     WindowCheck._defineSymbols()

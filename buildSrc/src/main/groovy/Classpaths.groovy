@@ -26,10 +26,9 @@ class Classpaths {
 
     static final String JAVA_PARSER_GROUP = 'com.github.javaparser'
     static final String JAVA_PARSER_NAME = 'javaparser-core'
-    static final String JAVA_PARSER_VERSION = '2.0.0'
-    // TODO: upgrade to 3.6.23 / latest, so we can use the "most of the work's already done" symbol solver IDS-1517-20
+    static final String JAVA_PARSER_VERSION = '3.23.0'
+    // TODO (core#1163): take advantage of symbol-solver-core
 //    static final String JAVA_PARSER_NAME = 'javaparser-symbol-solver-core'
-//    static final String JAVA_PARSER_VERSION = '3.6.23'
 
     static final String JAVAX_ANNOTATIONS_GROUP = 'javax.validation'
     static final String JAVAX_ANNOTATIONS_NAME = 'validation-api'
@@ -44,6 +43,9 @@ class Classpaths {
     static final String JS_INTEROP_VERSION = '1.0.2'
 
     static final String COMMONS_GROUP = 'org.apache.commons'
+
+    static final String ARROW_GROUP = 'org.apache.arrow'
+    static final String ARROW_VERSION = '5.0.0'
 
     static boolean addDependency(Configuration conf, String group, String name, String version, Action<? super DefaultExternalModuleDependency> configure = Actions.doNothing()) {
         if (!conf.dependencies.find { it.name == name && it.group == group}) {
@@ -77,8 +79,6 @@ class Classpaths {
 
     static void inheritJavaParser(Project p, String name = JAVA_PARSER_NAME) {
         Configuration compile = compile p
-        // Hm.... how to reconcile?  :DB uses version 2.0.0, we want 3.6.23
-        // For now, we'll stick to 2.0.0
         addDependency compile, JAVA_PARSER_GROUP, name, JAVA_PARSER_VERSION
     }
 
@@ -108,5 +108,10 @@ class Classpaths {
             // we only want some small, self-contained classes in commons-text anyway.
             dep -> dep.exclude(['module': 'commons-lang3'])
         }
+    }
+
+    static void inheritArrow(Project p, String name, String configName) {
+        Configuration config = p.configurations.getByName(configName)
+        addDependency(config, ARROW_GROUP, name, ARROW_VERSION)
     }
 }

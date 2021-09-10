@@ -2,7 +2,7 @@ FROM docker.io/library/node:14.16.0 AS node
 WORKDIR /usr/src/app
 
 FROM node as build
-ARG WEB_VERSION=0.2.1
+ARG WEB_VERSION=0.3.1
 
 # Pull in the published package from npmjs and extract it
 RUN set -eux; \

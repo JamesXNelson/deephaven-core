@@ -128,6 +128,12 @@ class Docker {
         String imageName;
 
         /**
+         * Tag to apply the network to the container.
+         */
+
+        String network;
+
+        /**
          * Path inside the created docker container that contains the output to be copied out as part of this task
          */
         String containerOutPath = '/out'
@@ -179,7 +185,7 @@ class Docker {
     static TaskProvider<? extends Task> registerDockerTask(Project project, String taskName, Action<? super DockerTaskConfig> action) {
         // create instance, assign defaults
         DockerTaskConfig cfg = new DockerTaskConfig();
-        cfg.imageName = "deephaven/${taskName}:${LOCAL_BUILD_TAG}"
+        cfg.imageName = "deephaven/${taskName.replaceAll(/\B[A-Z]/) { String str -> '-' + str }.toLowerCase()}:${LOCAL_BUILD_TAG}"
 
         // ask for more configuration
         action.execute(cfg)
@@ -249,6 +255,10 @@ class Docker {
                 if (cfg.entrypoint) {
                     // if provided, set a run command that we'll use each time it starts
                     entrypoint.set(cfg.entrypoint)
+                }
+
+                if (cfg.network) {
+                    hostConfig.network.set(cfg.network)
                 }
 
                 targetImageId makeImage.get().getImageId()

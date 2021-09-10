@@ -7,6 +7,7 @@ import io.deephaven.db.util.scripts.ScriptPathLoader;
 import io.deephaven.db.util.scripts.ScriptPathLoaderState;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import scala.Option;
 import scala.collection.JavaConverters;
@@ -79,9 +80,8 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
         }
     }
 
-    public ScalaDeephavenSession(@SuppressWarnings("unused") boolean runInitScripts,
-        boolean isDefaultScriptSession) {
-        super(isDefaultScriptSession);
+    public ScalaDeephavenSession(@SuppressWarnings("unused") boolean runInitScripts, boolean isDefaultScriptSession) {
+        super(null, isDefaultScriptSession);
 
         errorHandler = new ErrorHandler();
         GenericRunnerSettings settings = new GenericRunnerSettings(errorHandler);
@@ -105,8 +105,8 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
 
         setVariable("log", log);
 
-        // Our first valueOfTerm will try to evaluate the Java classes, but there is a scala problem
-        // with Generics and inners.
+        // Our first valueOfTerm will try to evaluate the Java classes, but there is a scala problem with Generics and
+        // inners.
         interpreter.beSilentDuring(() -> {
             interpreter.valueOfTerm("log");
             return null;
@@ -118,6 +118,7 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
         return new QueryScope.SynchronizedScriptSessionImpl(this);
     }
 
+    @NotNull
     @Override
     public Object getVariable(String name) throws QueryScope.MissingVariableException {
         Option<Object> value = interpreter.valueOfTerm(name);
@@ -141,10 +142,9 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
         Results.Result result;
         try {
             result = LiveTableMonitor.DEFAULT.exclusiveLock()
-                .computeLockedInterruptibly(() -> interpreter.interpret(command));
+                    .computeLockedInterruptibly(() -> interpreter.interpret(command));
         } catch (InterruptedException e) {
-            throw new QueryCancellationException(
-                e.getMessage() != null ? e.getMessage() : "Query interrupted", e);
+            throw new QueryCancellationException(e.getMessage() != null ? e.getMessage() : "Query interrupted", e);
         }
 
         if (!(result instanceof Results.Success$)) {
@@ -152,24 +152,22 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
                 if (reporter.lastError != null) {
                     throw new RuntimeException("Could not evaluate command: " + reporter.lastError);
                 } else if (reporter.lastUntruncated != null) {
-                    throw new RuntimeException(
-                        "Could not evaluate command: " + reporter.lastUntruncated);
+                    throw new RuntimeException("Could not evaluate command: " + reporter.lastUntruncated);
                 } else {
                     throw new RuntimeException("Could not evaluate command, unknown error!");
                 }
             } else if (result instanceof Results.Incomplete$) {
                 throw new IllegalStateException("Incomplete line");
             } else {
-                throw new IllegalStateException("Bad result type: "
-                    + result.getClass().getCanonicalName() + " (" + result + ")");
+                throw new IllegalStateException(
+                        "Bad result type: " + result.getClass().getCanonicalName() + " (" + result + ")");
             }
         }
     }
 
     @Override
     public Map<String, Object> getVariables() {
-        Collection<Names.TermName> termNames =
-            JavaConverters.asJavaCollection(interpreter.definedTerms());
+        Collection<Names.TermName> termNames = JavaConverters.asJavaCollection(interpreter.definedTerms());
         Map<String, Object> variableMap = new HashMap<>();
         for (Names.TermName termName : termNames) {
             final String name = termName.toString();
@@ -181,8 +179,7 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
 
     @Override
     public Set<String> getVariableNames() {
-        return Collections
-            .unmodifiableSet(JavaConverters.asJavaCollection(interpreter.definedTerms())
+        return Collections.unmodifiableSet(JavaConverters.asJavaCollection(interpreter.definedTerms())
                 .stream()
                 .map(Names.TermName::toString)
                 .collect(Collectors.toSet()));
@@ -194,15 +191,16 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
     }
 
     @Override
-    public void setVariable(String name, Object value) {
-        if (value == null) {
-            interpreter.beQuietDuring(() -> interpreter
-                .bind(new NamedParamClass(name, Object.class.getCanonicalName(), null)));
+    public void setVariable(String name, @Nullable Object newValue) {
+        final Object oldValue = getVariable(name, null);
+        if (newValue == null) {
+            interpreter.beQuietDuring(
+                    () -> interpreter.bind(new NamedParamClass(name, Object.class.getCanonicalName(), null)));
         } else {
-            final String type = value.getClass().getCanonicalName();
-            interpreter
-                .beQuietDuring(() -> interpreter.bind(new NamedParamClass(name, type, value)));
+            final String type = newValue.getClass().getCanonicalName();
+            interpreter.beQuietDuring(() -> interpreter.bind(new NamedParamClass(name, type, newValue)));
         }
+        notifyVariableChange(name, oldValue, newValue);
     }
 
     @Override
@@ -212,7 +210,7 @@ public class ScalaDeephavenSession extends AbstractScriptSession implements Scri
 
     @Override
     public void onApplicationInitializationBegin(Supplier<ScriptPathLoader> pathLoader,
-        ScriptPathLoaderState scriptLoaderState) {}
+            ScriptPathLoaderState scriptLoaderState) {}
 
     @Override
     public void onApplicationInitializationEnd() {}
