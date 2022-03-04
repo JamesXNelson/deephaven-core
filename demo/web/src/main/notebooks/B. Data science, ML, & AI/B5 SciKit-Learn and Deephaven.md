@@ -111,8 +111,8 @@ With that done, it's time to put everything together.  Let's start by fitting ou
 learn.learn(
     table = iris_train,
     model_func = fit_knn,
-    inputs = [learn.Input(["SepalLengthCM", "SepalWidthCM", "PetalLengthCM", "PetalWidthCM"], table_to_numpy_double), 
-              learn.Input(["Class"], table_to_numpy_integer)],
+    inputs = [learn.Input(["SepalLengthCM", "SepalWidthCM", "PetalLengthCM", "PetalWidthCM"], table_to_array_double), 
+              learn.Input(["Class"], table_to_array_int)],
     outputs = None,
     batch_size = iris_train.intSize()
 )
@@ -125,7 +125,7 @@ We've got a fitted classifier now.  Let's test it out on our test table.
 iris_test_knn = learn.learn(
     table = iris_test,
     model_func = use_fitted_knn,
-    inputs = [learn.Input(["SepalLengthCM", "SepalWidthCM", "PetalLengthCM", "PetalWidthCM"], table_to_numpy_double)],
+    inputs = [learn.Input(["SepalLengthCM", "SepalWidthCM", "PetalLengthCM", "PetalWidthCM"], table_to_array_double)],
     outputs = [learn.Output("PredictedClass", numpy_to_table_integer, "int")],
     batch_size = iris_test.size()
 )
