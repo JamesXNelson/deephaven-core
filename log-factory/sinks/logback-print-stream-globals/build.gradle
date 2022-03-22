@@ -1,5 +1,6 @@
 plugins {
   id 'java-library'
+  id 'io.deephaven.project.register'
 }
 
 configurations {
@@ -8,5 +9,5 @@ configurations {
 
 dependencies {
   // consumer still needs to provide dependency
-  compileOnly 'ch.qos.logback:logback-core:1.2.3'
+  Classpaths.inheritLogbackClassic(project, 'compileOnly')
 }

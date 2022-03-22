@@ -2,11 +2,12 @@ import com.bmuschko.gradle.docker.tasks.image.Dockerfile
 
 plugins {
     id 'com.bmuschko.docker-remote-api'
+    id 'io.deephaven.project.register'
 }
 
 description = 'Generates docs for the python libraries provided in Deephaven Core'
 
-evaluationDependsOn ':Integrations'
+evaluationDependsOn ':docker-runtime-base'
 evaluationDependsOn ':pyclient'
 
 def copyPyClientWhl = tasks.register('copyPyClientWhl', Sync) {
@@ -25,10 +26,10 @@ def sphinxDockerfile = tasks.register('sphinxDockerfile', Dockerfile) {
     from 'deephaven/runtime-base:local-build'
 
     copyFile "./wheel", "/wheel"
-    copyFile "./lib", "/usr/lib/python3/dist-packages/"
+    copyFile "./lib", '${VIRTUAL_ENV}/lib/python3.7/site-packages/'
 
-    runCommand '''set -eux; \\ 
-                  pip3 install sphinx==4.0.3 sphinx-autodoc-typehints==1.12.0 pyarrow==5.0.0 protobuf==3.17.3 grpcio==1.39.0 bitstring==3.1.9 /wheel/*.whl breathe==4.31.0 furo==2021.9.8
+    runCommand '''set -eux; \\
+                  python -m pip install sphinx==4.0.3 sphinx-autodoc-typehints==1.12.0 pyarrow==6.0.1 protobuf==3.17.3 grpcio==1.39.0 bitstring==3.1.9 /wheel/*.whl breathe==4.31.0 furo==2021.9.8
                   '''
 }
 
@@ -37,7 +38,7 @@ def sphinxImage = Docker.registerDockerImage(project, 'sphinx') {
     inputs.files copyPyClientWhl.get().outputs.files
     inputs.files copySphinxLib.get().outputs.files
     inputDir.set layout.buildDirectory.dir('sphinx-image')
-    inputs.files project(':Integrations').tasks.findByName('buildDeephavenPython').outputs.files // deephaven/runtime-base
+    inputs.files project(':docker-runtime-base').tasks.findByName('buildDocker').outputs.files // deephaven/runtime-base
     images.add('deephaven/sphinx:local-build')
 }
 
@@ -89,7 +90,9 @@ def cppClientDoxygenTask = Docker.registerDockerTask(project, 'cppClientDoxygen'
         from 'deephaven/runtime-base:local-build'
 
         runCommand('''set -eux; \\
-                      apt-get -y install doxygen graphviz
+                      apt-get update; \\
+                      apt-get -y install doxygen graphviz; \\
+                      rm -rf /var/lib/apt/lists/*
                       ''')
 
         copyFile('.', '/project')
@@ -99,7 +102,7 @@ def cppClientDoxygenTask = Docker.registerDockerTask(project, 'cppClientDoxygen'
                       doxygen
                       ''')
     }
-    parentContainers = [project(':Integrations').tasks.findByName('buildDeephavenPython')] // deephaven/runtime-base
+    parentContainers = [project(':docker-runtime-base').tasks.findByName('buildDocker')] // deephaven/runtime-base
     containerOutPath = '/project/doc/doxygenoutput'
     copyOut {
         into "$buildDir/cppClientDoxygen"

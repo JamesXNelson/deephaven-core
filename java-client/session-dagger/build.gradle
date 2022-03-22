@@ -1,34 +1,39 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description = 'The Deephaven client session dagger library'
 
 dependencies {
-    api project(':client-session')
+    api project(':java-client-session')
 
-    implementation 'com.google.dagger:dagger:2.31.1'
-    annotationProcessor 'com.google.dagger:dagger-compiler:2.31.1'
+    Classpaths.inheritGrpcPlatform(project, 'api')
+    api 'io.grpc:grpc-api'
+
+    implementation project(':proto:proto-backplane-grpc')
+
+    Classpaths.inheritDagger(project)
 
     Classpaths.inheritSlf4j(project, 'slf4j-api', 'implementation')
     Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
 
     // Unable to use newer junit here because of test-libs/junit-wall-4.11.jar
     /*
-    testImplementation(platform('org.junit:junit-bom:5.7.2'))
+    Classpaths.inheritJUnitPlatform(project)
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
     testRuntimeOnly 'org.junit.vintage:junit-vintage-engine'
     testImplementation 'junit:junit:4.13.2'
     */
 
-    testImplementation 'org.assertj:assertj-core:3.19.0'
+    Classpaths.inheritAssertJ(project)
 
-    testImplementation TestTools.projectDependency(project, 'grpc-api')
+    testImplementation TestTools.projectDependency(project, 'server')
+    testImplementation project(':java-client-flight')
+    testImplementation project(':proto:proto-backplane-grpc-flight')
     testImplementation project(':log-to-slf4j')
 }
 
 test {
 }
-
-apply plugin: 'io.deephaven.java-publishing-conventions'

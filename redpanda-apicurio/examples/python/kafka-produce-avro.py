@@ -22,7 +22,7 @@
 #  * Start the redpanda-apicurio compose: (cd redpanda-apicurio && docker-compose up --build)
 #  * From web UI do:
 #
-#    > from deephaven import KafkaTools
+#    > from deephaven import ConsumeKafka as ck
 #
 # == Example (1)
 #
@@ -33,13 +33,12 @@
 #
 # The last command above should have loaded the avro schema in the file avro/share_price.json
 # to the apicurio registry. You can check it was loaded visiting on the host the URL:
-#   http://localhost:8081/ui/artifacts
+#   http://localhost:8083/ui/artifacts
 # That page should now list 'share_price_record' as an available schema.
 #
 # From the web IDE, run:
 #
-#    > from deephaven import KafkaTools as kt
-#    > t = kt.consumeToTable({'bootstrap.servers' : 'redpanda:29092', 'schema.registry.url' : 'http://registry:8080/api/ccompat'}, 'share_price', value=kt.avro('share_price_record'), table_type='append')
+#    > t = ck.consumeToTable({'bootstrap.servers' : 'redpanda:29092', 'schema.registry.url' : 'http://registry:8080/api/ccompat'}, 'share_price', value=ck.avro('share_price_record'), table_type='append')
 #
 # The last command above should create a table with columns: [ KafkaPartition, KafkaOffset, KafkaTimestamp, Symbol, Price ]
 # Run this script on the host (not on a docker image) to generate one row:
@@ -80,7 +79,7 @@ def delivery_report(err, msg):
 avroProducer = AvroProducer({
     'bootstrap.servers': 'localhost:9092',
     'on_delivery': delivery_report,
-    'schema.registry.url': 'http://localhost:8081/api/ccompat'
+    'schema.registry.url': 'http://localhost:8083/api/ccompat'
 }, default_value_schema=value_schema)
 
 def wrong_form(value_arg):

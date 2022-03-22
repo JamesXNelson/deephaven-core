@@ -32,7 +32,7 @@ using deephaven::client::utility::SimpleOstringstream;
 using deephaven::client::utility::SFCallback;
 using deephaven::client::utility::separatedList;
 using deephaven::client::utility::stringf;
-using deephaven::client::utility::flight::statusOrDie;
+using deephaven::client::utility::okOrThrow;
 
 namespace deephaven {
 namespace client {
@@ -425,7 +425,7 @@ std::shared_ptr<arrow::flight::FlightStreamReader> FlightWrapper::getFlightStrea
   arrow::flight::Ticket tkt;
   tkt.ticket = table.impl()->ticket().ticket();
 
-  statusOrDie(server->flightClient()->DoGet(options, tkt, &fsr), "FlightClient::DoGet");
+  okOrThrow(DEEPHAVEN_EXPR_MSG(server->flightClient()->DoGet(options, tkt, &fsr)));
   return fsr;
 }
 
@@ -495,20 +495,6 @@ TableHandle TableHandle::exactJoin(const TableHandle &rightSide,
   return exactJoin(rightSide, std::move(ctmStrings), std::move(ctaStrings));
 }
 
-TableHandle TableHandle::leftJoin(const TableHandle &rightSide,
-    std::vector<std::string> columnsToMatch, std::vector<std::string> columnsToAdd) const {
-  auto qtImpl = impl_->leftJoin(*rightSide.impl_, std::move(columnsToMatch),
-      std::move(columnsToAdd));
-  return TableHandle(std::move(qtImpl));
-}
-
-TableHandle TableHandle::leftJoin(const TableHandle &rightSide,
-    std::vector<MatchWithColumn> columnsToMatch, std::vector<SelectColumn> columnsToAdd) const {
-  auto ctmStrings = toIrisRepresentation(columnsToMatch);
-  auto ctaStrings = toIrisRepresentation(columnsToAdd);
-  return leftJoin(rightSide, std::move(ctmStrings), std::move(ctaStrings));
-}
-
 void TableHandle::bindToVariable(std::string variable) const {
   auto res = SFCallback<>::createForFuture();
   bindToVariableAsync(std::move(variable), std::move(res.first));
@@ -564,7 +550,7 @@ void printTableData(std::ostream &s, const TableHandle &tableHandle, bool wantHe
 
   while (true) {
     arrow::flight::FlightStreamChunk chunk;
-    statusOrDie(fsr->Next(&chunk), "FlightStreamReader::Next()");
+    okOrThrow(DEEPHAVEN_EXPR_MSG(fsr->Next(&chunk)));
     if (chunk.data == nullptr) {
       break;
     }

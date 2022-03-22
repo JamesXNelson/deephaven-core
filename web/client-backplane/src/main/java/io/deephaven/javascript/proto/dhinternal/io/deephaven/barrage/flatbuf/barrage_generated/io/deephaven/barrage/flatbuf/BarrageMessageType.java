@@ -8,7 +8,9 @@ import jsinterop.annotations.JsType;
         name = "dhinternal.io.deephaven.barrage.flatbuf.Barrage_generated.io.deephaven.barrage.flatbuf.BarrageMessageType",
         namespace = JsPackage.GLOBAL)
 public class BarrageMessageType {
-    public static int BarrageSerializationOptions,
+    public static int BarragePublicationRequest,
+            BarrageSerializationOptions,
+            BarrageSnapshotRequest,
             BarrageSubscriptionRequest,
             BarrageUpdateMetadata,
             NewSessionRequest,

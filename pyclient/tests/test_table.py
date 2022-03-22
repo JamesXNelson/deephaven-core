@@ -31,10 +31,9 @@ class TableTestCase(BaseTestCase):
         self.assertEqual(len(column_specs) + 1, len(t2.schema))
 
     def test_snapshot_timetable(self):
-        t = self.session.time_table(period=10000000)
-        time.sleep(1)
+        t = self.session.time_table(period=1000000000)
         pa_table = t.snapshot()
-        self.assertGreaterEqual(pa_table.num_rows, 1)
+        self.assertIsNotNone(pa_table)
 
     def test_create_data_table_then_update(self):
         pa_table = csv.read_csv(self.csv_file)
@@ -117,14 +116,6 @@ class TableTestCase(BaseTestCase):
         with self.assertRaises(DHError):
             result_table = left_table.exact_join(right_table, on=["a"], joins=["d", "e"])
             self.assertEqual(test_table.size, result_table.size)
-
-    def test_left_join(self):
-        pa_table = csv.read_csv(self.csv_file)
-        test_table = self.session.import_table(pa_table)
-        left_table = test_table.drop_columns(["d", "e"])
-        right_table = test_table.drop_columns(["b", "c"])
-        result_table = left_table.left_join(right_table, on=["a"], joins=["d", "e"])
-        self.assertEqual(test_table.size, result_table.size)
 
     def test_cross_join(self):
         pa_table = csv.read_csv(self.csv_file)
@@ -212,5 +203,5 @@ class TableTestCase(BaseTestCase):
                      .pct(percentile=0.5, cols=["PctC = c"])
                      .weighted_avg(wcol="d", cols=["WavGD = d"]))
 
-        result_table = test_table.combo_by(by=["a"], agg=combo_agg)
+        result_table = test_table.agg_by(agg=combo_agg, by=["a"])
         self.assertEqual(result_table.size, num_distinct_a)
