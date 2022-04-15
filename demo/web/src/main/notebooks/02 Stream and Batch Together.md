@@ -21,7 +21,7 @@ def get_trades_stream():
           'schema.registry.url' : 'http://demo-kafka.c.deephaven-oss.internal:8081' },
         'io.deephaven.crypto.kafka.TradesTopic',
         key_spec = KeyValueSpec.IGNORE,
-        value = ck.avro_spec('io.deephaven.crypto.kafka.TradesTopic-io.deephaven.crypto.Trade'),
+        value_spec = ck.avro_spec('io.deephaven.crypto.kafka.TradesTopic-io.deephaven.crypto.Trade'),
         offsets = ck.ALL_PARTITIONS_SEEK_TO_END,
         table_type = TableType.Append)
 
