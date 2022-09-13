@@ -165,6 +165,11 @@ class Docker {
         String platform;
 
         /**
+         * Optional set of environment variables to set on the container.
+         */
+        Map<String, String> envVars;
+
+        /**
          * Logs are always printed from the build task when it runs, but entrypoint logs are only printed
          * when it fails. Set this flag to always show logs, even when entrypoint is successful.
          */
@@ -213,7 +218,8 @@ class Docker {
     static TaskProvider<? extends Task> registerDockerTask(Project project, String taskName, Action<? super DockerTaskConfig> action) {
         // create instance, assign defaults
         DockerTaskConfig cfg = new DockerTaskConfig();
-        cfg.imageName = "deephaven/${taskName.replaceAll(/\B[A-Z]/) { String str -> '-' + str }.toLowerCase()}:${LOCAL_BUILD_TAG}"
+        // Change taskNameFormat into deephaven/task-name-format
+        cfg.imageName = "deephaven/${taskName.replaceAll(/\B[A-Z]/, /-$0/).toLowerCase()}:${LOCAL_BUILD_TAG}"
 
         // ask for more configuration
         action.execute(cfg)
@@ -271,6 +277,7 @@ class Docker {
                 // is updated
                 inputs.files cfg.parentContainers.each { t -> t.outputs.files }
 
+
                 // specify tag, if provided
                 if (cfg.imageName) {
                     images.add(cfg.imageName)
@@ -306,6 +313,9 @@ class Docker {
 
                 if (cfg.containerDependencies.dependsOn) {
                     dependsOn(cfg.containerDependencies.dependsOn)
+                }
+                if (cfg.envVars) {
+                    createContainer.envVars.putAll cfg.envVars
                 }
 
                 targetImageId makeImage.get().getImageId()
@@ -532,6 +542,7 @@ class Docker {
     static TaskProvider<? extends Task> buildPyWheel(Project project, String taskName, String imgName, String sourcePath) {
         project.evaluationDependsOn(registryProject('python'))
         return registerDockerTask(project, taskName) { DockerTaskConfig config ->
+            String machineVersion = project.extensions.findByName('machineVersion') as String ?: project.version as String
             config.copyIn { Sync sync ->
                 sync.from(sourcePath) { CopySpec copySpec ->
                     copySpec.exclude 'build', 'dist'
@@ -543,7 +554,7 @@ class Docker {
                 // set up the container, env vars - things that aren't likely to change
                 action.from 'deephaven/python:local-build as sources'
                 action.arg 'DEEPHAVEN_VERSION'
-                action.environmentVariable 'DEEPHAVEN_VERSION', project.version.toString()
+                action.environmentVariable 'DEEPHAVEN_VERSION', machineVersion
                 action.workingDir '/usr/src/app'
                 action.copyFile '/src', '.'
                 action.from 'sources as build'
