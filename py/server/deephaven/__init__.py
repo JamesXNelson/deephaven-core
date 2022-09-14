@@ -9,7 +9,7 @@ unlocks the unique power of Deephaven to the Python community.
 
 import os
 
-__version__ = os.environ.get('DEEPHAVEN_VERSION') or "0.16.1"
+__version__ = os.environ.get('DEEPHAVEN_VERSION') or "0.17.0"
 
 from deephaven_internal import jvm
 try:

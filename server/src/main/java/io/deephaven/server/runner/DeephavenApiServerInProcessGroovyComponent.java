@@ -5,6 +5,7 @@ package io.deephaven.server.runner;
 
 import dagger.BindsInstance;
 import dagger.Component;
+import io.deephaven.server.console.SessionToExecutionStateModule;
 import io.deephaven.server.console.groovy.GroovyConsoleSessionModule;
 import io.deephaven.server.healthcheck.HealthCheckModule;
 import io.deephaven.server.log.LogModule;
@@ -20,7 +21,8 @@ import java.io.PrintStream;
         LogModule.class,
         GroovyConsoleSessionModule.class,
         ServerBuilderInProcessModule.class,
-        HealthCheckModule.class
+        SessionToExecutionStateModule.class,
+        HealthCheckModule.class,
 })
 public interface DeephavenApiServerInProcessGroovyComponent {
 

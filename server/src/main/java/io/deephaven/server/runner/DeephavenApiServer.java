@@ -3,6 +3,9 @@
  */
 package io.deephaven.server.runner;
 
+import io.deephaven.auth.AuthenticationRequestHandler;
+import io.deephaven.configuration.Configuration;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.table.impl.perf.QueryPerformanceRecorder;
 import io.deephaven.engine.table.impl.perf.UpdatePerformanceTracker;
 import io.deephaven.engine.table.impl.util.MemoryTableLoggers;
@@ -28,6 +31,7 @@ import io.grpc.protobuf.services.HealthStatusManager;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -38,6 +42,9 @@ import java.util.concurrent.TimeoutException;
 public class DeephavenApiServer {
     private static final Logger log = LoggerFactory.getLogger(DeephavenApiServer.class);
 
+    private static final String TARGET_URL = Configuration.getInstance()
+            .getStringWithDefault("TargetUrl", "https://localhost:10000/");
+
     private final GrpcServer server;
     private final UpdateGraphProcessor ugp;
     private final LogInit logInit;
@@ -46,6 +53,8 @@ public class DeephavenApiServer {
     private final ApplicationInjector applicationInjector;
     private final UriResolvers uriResolvers;
     private final SessionService sessionService;
+    private final Map<String, AuthenticationRequestHandler> authenticationHandlers;
+    private final Provider<ExecutionContext> executionContextProvider;
     private final HealthStatusManager healthStatusManager;
 
     @Inject
@@ -58,6 +67,8 @@ public class DeephavenApiServer {
             final ApplicationInjector applicationInjector,
             final UriResolvers uriResolvers,
             final SessionService sessionService,
+            final Map<String, AuthenticationRequestHandler> authenticationHandlers,
+            final Provider<ExecutionContext> executionContextProvider,
             final HealthStatusManager healthStatusManager) {
         this.server = server;
         this.ugp = ugp;
@@ -67,6 +78,8 @@ public class DeephavenApiServer {
         this.applicationInjector = applicationInjector;
         this.uriResolvers = uriResolvers;
         this.sessionService = sessionService;
+        this.authenticationHandlers = authenticationHandlers;
+        this.executionContextProvider = executionContextProvider;
         this.healthStatusManager = healthStatusManager;
     }
 
@@ -141,6 +154,9 @@ public class DeephavenApiServer {
         // inject applications before we start the gRPC server
         applicationInjector.run();
 
+        log.info().append("Initializing Authentication...").endl();
+        authenticationHandlers.forEach((name, handler) -> handler.initialize(TARGET_URL));
+
         log.info().append("Starting server...").endl();
         server.start();
         log.info().append("Server started on port ").append(server.getPort()).endl();
@@ -161,6 +177,7 @@ public class DeephavenApiServer {
     void startForUnitTests() throws Exception {
         pluginRegistration.registerAll();
         applicationInjector.run();
+        executionContextProvider.get().getQueryLibrary().updateVersionString("DEFAULT");
 
         log.info().append("Starting server...").endl();
         server.start();
