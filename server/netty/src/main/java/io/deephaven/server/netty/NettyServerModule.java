@@ -9,10 +9,8 @@ import dagger.Provides;
 import io.deephaven.UncheckedDeephavenException;
 import io.deephaven.grpc.MTlsCertificate;
 import io.deephaven.internal.log.LoggerFactory;
-import io.deephaven.io.logger.LogBuffer;
 import io.deephaven.io.logger.Logger;
 import io.deephaven.server.config.ServerConfig;
-import io.deephaven.server.log.LogInit;
 import io.deephaven.server.log.LogModule;
 import io.deephaven.server.runner.GrpcServer;
 import io.deephaven.ssl.config.SSLConfig;
@@ -35,14 +33,12 @@ import java.util.Set;
 @Module(includes = LogModule.class)
 public interface NettyServerModule {
 
-
     @Binds
     ServerConfig bindsServerConfig(NettyConfig serverConfig);
 
     @Provides
     static GrpcServer serverBuilder(
             NettyConfig serverConfig,
-
             Set<BindableService> services,
             Set<ServerInterceptor> interceptors) {
         final NettyServerBuilder serverBuilder;
@@ -59,7 +55,7 @@ public interface NettyServerModule {
         Logger log = LoggerFactory.getLogger(NettyServerModule.class);
         if (serverConfig.ssl().isPresent()) {
             if (log.isInfoEnabled()) {
-                log.info().append("Using ssl configuration" ).append(serverConfig.ssl().get().toString()).endl();
+                log.info().append("Using ssl configuration").append(serverConfig.ssl().get().toString()).endl();
             }
             final SSLConfig ssl = serverConfig.ssl().get().orTrust(TrustJdk.of());
             final SSLFactory kickstart = KickstartUtils.create(ssl);
