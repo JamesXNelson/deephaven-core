@@ -4,7 +4,8 @@ plugins {
 }
 
 group = 'io.deephaven'
-version = '0.16.1'
+String v = findProperty('version')
+version = v == 'unspecified' ? '0.16.4' : v
 
 if (!name.startsWith('deephaven-')) {
     archivesBaseName = "deephaven-${name}"
